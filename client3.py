@@ -58,7 +58,7 @@ class Client:
 def main():
     SERVER_IP = '172.26.109.167'
     SERVER_PORT = 12345
-    CLIENT_ID = '1'  # Hardcoded client ID for now
+    CLIENT_ID = '3'  # Hardcoded client ID for now
 
     client = Client(SERVER_IP, SERVER_PORT, CLIENT_ID)
 
