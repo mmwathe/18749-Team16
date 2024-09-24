@@ -3,6 +3,8 @@ import time
 from datetime import datetime
 import uuid
 import json
+from dotenv import load_dotenv
+import os
 
 class Message:
     def __init__(self, client_id, message):
@@ -56,7 +58,7 @@ class Client:
         print("Client shutdown.")
 
 def main():
-    SERVER_IP = '172.26.109.167'
+    SERVER_IP = os.getenv('SERVER_IP')
     SERVER_PORT = 12345
     CLIENT_ID = '1'  # Hardcoded client ID for now
 
@@ -77,4 +79,5 @@ def main():
         client.close_connection()
 
 if __name__ == '__main__':
+    load_dotenv() 
     main()
