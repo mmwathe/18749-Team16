@@ -41,13 +41,15 @@ class Client:
             "message": message.message,
             "message_id": message.message_id
         })
-        print(f"Sending message to server: {message_json}")
+        print("=========================================================\n" + 
+              f"Sending message to server: {message_json}" + "\n")
         self.socket.sendall(message_json.encode())
 
     def receive_response(self):
         try:
             response = self.socket.recv(1024).decode()
-            print(f"Received from server: {response}")
+            print("=========================================================\n" + 
+                  f"Received from server: {response}" + "\n")
             return response
         except Exception as e:
             print(f"Failed to receive response: {e}")
