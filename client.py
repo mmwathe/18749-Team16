@@ -1,10 +1,5 @@
 import socket
-import time
-from datetime import datetime
-import uuid
 import json
-from dotenv import load_dotenv
-import os
 from message import Message
 
 class Client:
