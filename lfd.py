@@ -1,84 +1,122 @@
 import socket
-import json
 import time
-import threading
-import uuid
+import json
+import argparse
+from message import Message
 
-class LocalFaultDetector:
-    def __init__(self, lfd_ip, lfd_port, server_ip, server_port, heartbeat_interval=2, timeout=5):
-        self.lfd_ip = lfd_ip
-        self.lfd_port = lfd_port
+# Define color functions for printing
+def prGreen(skk): print(f"\033[92m{skk}\033[00m")
+def prRed(skk): print(f"\033[91m{skk}\033[00m")
+def prYellow(skk): print(f"\033[93m{skk}\033[00m")
+def prLightPurple(skk): print(f"\033[94m{skk}\033[00m")
+def prPurple(skk): print(f"\033[95m{skk}\033[00m")
+def prCyan(skk): print(f"\033[96m{skk}\033[00m")
+
+class LFD:
+    def __init__(self, server_ip, server_port, client_id, heartbeat_interval=2):
         self.server_ip = server_ip
         self.server_port = server_port
+        self.client_id = client_id
         self.heartbeat_interval = heartbeat_interval
-        self.timeout = timeout
-        self.server_socket = None
-        self.lfd_socket = None
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_alive = True
 
-    def connect_to_server(self):
+    def connect(self):
         try:
-            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.server_socket.settimeout(self.timeout)
-            self.server_socket.connect((self.server_ip, self.server_port))
-            print(f"Connected to server at {self.server_ip}:{self.server_port}")
-        except socket.error:
-            print("Unable to connect to server.")
+            self.socket.connect((self.server_ip, self.server_port))
+            prGreen(f"Connected to server at {self.server_ip}:{self.server_port}")
+            return True
+        except Exception as e:
+            prRed(f"Failed to connect to server: {e}")
             self.server_alive = False
+            return False
 
     def send_heartbeat(self):
-        while self.server_alive:
-            try:
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-                message = {
-                    "message": "heartbeat",
-                    "client_id": "LFD1",
-                    "timestamp": timestamp,
-                    "message_id": str(uuid.uuid4())
-                }
-                # Send heartbeat to server
-                self.server_socket.sendall(json.dumps(message).encode())
-                print(f"Heartbeat Sent to S1 at {timestamp}")
+        message = Message(self.client_id, "heartbeat")
+        message_json = json.dumps({
+            "timestamp": message.timestamp,
+            "client_id": message.client_id,
+            "message": message.message,
+            "message_id": message.message_id
+        })
 
-                # Wait for acknowledgment
-                response = self.server_socket.recv(1024).decode()
-                response_data = json.loads(response)
-                response_timestamp = response_data.get('timestamp', 'Unknown')
-                print(f"Heartbeat Received for S1 at {response_timestamp}")
-            except socket.error:
-                print("Server is unreachable. Server might be down.")
-                self.server_alive = False
-            except json.JSONDecodeError:
-                print("Received malformed response from server.")
+        # Attempt to send the heartbeat message with error handling
+        try:
+            prYellow(str(message))  # Print the formatted heartbeat message
+            self.socket.sendall(message_json.encode())
+        except socket.error as e:
+            prRed(f"Failed to send heartbeat. Error: {e}. Retrying...")
+            # Sleep for a short time before retrying
             time.sleep(self.heartbeat_interval)
 
-    def start(self):
-        self.connect_to_server()
-        if self.server_alive:
-            heartbeat_thread = threading.Thread(target=self.send_heartbeat)
-            heartbeat_thread.start()
-            heartbeat_thread.join()
+    def receive_response(self):
+        try:
+            response = self.socket.recv(1024).decode()
+            
+            # Parse the response JSON
+            response_data = json.loads(response)
+            server_id = response_data.get('server_id', 'Unknown')
+            timestamp = response_data.get('timestamp', 'Unknown')
+            message = response_data.get('message', 'Unknown')
+            state = response_data.get('state', 'Unknown')
+            
+            # Print the parsed response in a formatted manner
+            prPurple("=" * 80)
+            prYellow(f"{timestamp:<20} {server_id} -> {self.client_id}")
+            prLightPurple(f"{'':<20} {'Message:':<15} {message}")
+            prLightPurple(f"{'':<20} {'State:':<15} {state}")
+            
+            return response
+        except (socket.error, json.JSONDecodeError):
+            prRed("No response received. Server might be down or sent an invalid response.")
+            return None
 
-    def close(self):
-        if self.server_socket:
-            self.server_socket.close()
-        print("LFD shutdown.")
+    def monitor_server(self):
+        while True:
+            self.send_heartbeat()
+            start_time = time.time()
+            response = self.receive_response()
+
+            if response is None:
+                # No response means server did not respond within the expected time frame
+                prRed("Server did not respond to the heartbeat.")
+                # We keep the LFD running and will continue to send heartbeats
+                self.socket.close()
+                time.sleep(self.heartbeat_interval)
+                self.connect()
+
+            # Calculate remaining time to sleep until the next heartbeat
+            elapsed_time = time.time() - start_time
+            sleep_time = max(0, self.heartbeat_interval - elapsed_time)
+            time.sleep(sleep_time)
+
+    def close_connection(self):
+        self.socket.close()
+        prRed("LFD shutdown.")
 
 def main():
-    LFD_IP = '0.0.0.0'  # LFD listens on all available interfaces
-    LFD_PORT = 49663    # LFD Port (not used in this version but set for completeness)
-    SERVER_IP = '0.0.0.0'  # Server IP
-    SERVER_PORT = 12345  # Server Port
-    HEARTBEAT_INTERVAL = 2   # Interval between heartbeats
-    TIMEOUT = 5              # Timeout for server response
+    # Set up argument parser for the heartbeat frequency
+    parser = argparse.ArgumentParser(description="Local Fault Detector (LFD) for monitoring server health.")
+    parser.add_argument('--heartbeat_freq', type=int, default=4,
+                        help="Frequency of heartbeat messages in seconds (default: 4 seconds).")
+    args = parser.parse_args()
 
-    lfd = LocalFaultDetector(LFD_IP, LFD_PORT, SERVER_IP, SERVER_PORT, HEARTBEAT_INTERVAL, TIMEOUT)
+    SERVER_IP = '0.0.0.0'
+    SERVER_PORT = 12345
+    CLIENT_ID = 'LFD1'
+
+    # Create an instance of LFD with the specified heartbeat frequency
+    lfd_client = LFD(SERVER_IP, SERVER_PORT, CLIENT_ID, heartbeat_interval=args.heartbeat_freq)
+
+    if not lfd_client.connect():
+        return
+
     try:
-        lfd.start()
+        lfd_client.monitor_server()
     except KeyboardInterrupt:
-        print("LFD is shutting down...")
+        prYellow("LFD interrupted by user.")
     finally:
-        lfd.close()
+        lfd_client.close_connection()
 
 if __name__ == '__main__':
     main()

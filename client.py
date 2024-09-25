@@ -5,17 +5,7 @@ import uuid
 import json
 from dotenv import load_dotenv
 import os
-
-class Message:
-    def __init__(self, client_id, message):
-        self.timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        self.client_id = client_id
-        self.message = message
-        self.message_id = str(uuid.uuid4())  # Generate a unique message ID
-
-    def __str__(self):
-        return f"[{self.timestamp}] Client {self.client_id} (ID: {self.message_id}): {self.message}"
-
+from message import Message
 
 class Client:
     def __init__(self, server_ip, server_port, client_id):
@@ -62,7 +52,7 @@ class Client:
 def main():
     SERVER_IP = os.getenv('SERVER_IP')
     SERVER_PORT = 12345
-    CLIENT_ID = '1'  # Hardcoded client ID for now
+    CLIENT_ID = 'C1'  # Hardcoded client ID for now
 
     client = Client(SERVER_IP, SERVER_PORT, CLIENT_ID)
 
