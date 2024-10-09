@@ -10,6 +10,8 @@ class GFD:
         self.heartbeat_interval = heartbeat_interval  # Interval between heartbeats
         self.membership = {}  # To track replicas (replica_id -> timestamp)
         self.lock = threading.Lock()  # Lock for thread-safe access to membership
+        self.conn_to_replica = {}  # Map connection to replica_id
+
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.bind((self.host, self.port))
         self.server_socket.listen(5)
@@ -65,17 +67,31 @@ class GFD:
 
                                         # Extract 'message' field to determine action
                                         action = message.get("message")
+                                        message_data = message.get("message_data", {})
 
                                         if action.startswith("add replica"):
-                                            _, _, replica = action.partition("add replica ")
-                                            replica = replica.strip()
-                                            self.add_replica(replica)
+                                            # Extract replica_id from message_data
+                                            replica_id = message_data.get("server_id")
+                                            if replica_id:
+                                                self.add_replica(replica_id)
+                                                # Map connection to replica_id
+                                                with self.lock:
+                                                    self.conn_to_replica[conn] = replica_id
+                                            else:
+                                                print(f"Missing 'server_id' in message_data from {addr}: {message}")
                                         elif action.startswith("remove replica"):
-                                            _, _, replica = action.partition("remove replica ")
-                                            replica = replica.strip()
-                                            self.delete_replica(replica)
-                                        elif action == "heartbeat response":
-                                            print(f"Heartbeat response received from LFD at {addr}")
+                                            # Extract replica_id from message_data
+                                            replica_id = message_data.get("server_id")
+                                            if replica_id:
+                                                self.delete_replica(replica_id)
+                                                # Remove mapping
+                                                with self.lock:
+                                                    if conn in self.conn_to_replica:
+                                                        del self.conn_to_replica[conn]
+                                            else:
+                                                print(f"Missing 'server_id' in message_data from {addr}: {message}")
+                                        elif action == "heartbeat acknowledgment":
+                                            print(f"Heartbeat acknowledgment received from LFD at {addr}")
                                         else:
                                             print(f"Unknown action '{action}' from {addr}")
 
@@ -90,6 +106,12 @@ class GFD:
                 print(f"Error receiving message from LFD at {addr}: {e}")
                 break
 
+        # Clean up upon disconnection
+        with self.lock:
+            replica_id = self.conn_to_replica.get(conn)
+            if replica_id:
+                self.delete_replica(replica_id)
+                del self.conn_to_replica[conn]
         conn.close()
         print(f"Connection with LFD at {addr} closed.")
 
