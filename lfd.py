@@ -25,19 +25,23 @@ class LFD:
         self.lfd_socket.bind((self.lfd_ip, self.lfd_port))
         self.lfd_socket.listen(1)  # Listen for one connection (the server)
         self.gfd_socket = None
+        self.server_socket = None
+        self.server_connected = False
 
     def wait_for_server(self):
-        """Wait for the server to connect to the LFD."""
+        """Wait for the server to connect to the LFD in non-blocking mode."""
+        self.lfd_socket.settimeout(1.0)  # Set a timeout to prevent blocking
         prYellow(f"LFD waiting for server to connect on {self.lfd_ip}:{self.lfd_port}...")
         try:
             self.server_socket, server_address = self.lfd_socket.accept()
             prGreen(f"Server connected from {server_address}")
+            self.server_connected = True
             # Notify GFD about the server connection
             self.notify_gfd("server_connected", server_address)
-            return True
+        except socket.timeout:
+            pass  # No server connected yet, continue the loop
         except Exception as e:
             prRed(f"Failed to accept server connection: {e}")
-            return False
 
     def connect_to_gfd(self):
         """Connect to the GFD and respond to heartbeats."""
@@ -125,22 +129,21 @@ class LFD:
 
     def monitor_server(self):
         """Monitor the server by sending heartbeats."""
-        self.send_heartbeat_to_server()
-        start_time = time.time()
-        response = self.receive_response_from_server()
+        if self.server_connected:
+            self.send_heartbeat_to_server()
+            start_time = time.time()
+            response = self.receive_response_from_server()
 
-        if response is None:
-            prRed("Server did not respond to the heartbeat.")
-            # Notify GFD that the server has disconnected
-            self.notify_gfd("server_disconnected", "No response from server")
-            # If server does not respond, terminate connection and wait for reconnection
-            self.server_socket.close()
+            if response is None:
+                prRed("Server did not respond to the heartbeat.")
+                # Notify GFD that the server has disconnected
+                self.notify_gfd("server_disconnected", "No response from server")
+                # If server does not respond, terminate connection and wait for reconnection
+                self.server_socket.close()
+                self.server_connected = False
+        else:
+            # If no server connected, wait for server
             self.wait_for_server()
-
-        # Calculate remaining time to sleep until the next heartbeat
-        elapsed_time = time.time() - start_time
-        sleep_time = max(0, self.heartbeat_interval - elapsed_time)
-        time.sleep(sleep_time)
 
     def close_connection(self):
         if self.server_socket:
@@ -171,22 +174,20 @@ def main():
     # Create an instance of LFD with the specified heartbeat frequency
     lfd = LFD(LFD_IP, LFD_PORT, GFD_IP, GFD_PORT, CLIENT_ID, heartbeat_interval=args.heartbeat_freq)
 
-    # Wait for the server to connect
-    if not lfd.wait_for_server():
-        return
-
     # Connect to the GFD
     if not lfd.connect_to_gfd():
         return
 
     try:
         while True:
-            # Monitor heartbeats with the server
-            lfd.monitor_server()
-
             # Monitor for heartbeats from the GFD
             lfd.receive_heartbeat_from_gfd()
 
+            # Monitor heartbeats with the server (non-blocking wait for server)
+            lfd.monitor_server()
+
+            # Sleep briefly to avoid high CPU usage
+            time.sleep(0.5)  # Adjust to match heartbeat frequency
     except KeyboardInterrupt:
         prYellow("LFD interrupted by user.")
     finally:
