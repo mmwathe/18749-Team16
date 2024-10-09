@@ -1,4 +1,4 @@
-import socket
+import socket 
 import json
 import time
 import threading
@@ -9,10 +9,12 @@ class GFD:
         self.port = port
         self.heartbeat_interval = heartbeat_interval  # Interval between heartbeats
         self.membership = {}  # To track replicas (replica_id -> timestamp)
+        self.lock = threading.Lock()  # Lock for thread-safe access to membership
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.bind((self.host, self.port))
         self.server_socket.listen(5)
         print(f"GFD started. Listening on {self.host}:{self.port}")
+        self.print_membership()
 
     def handle_lfd_connection(self, conn, addr):
         print(f"Connected to LFD at {addr}")
@@ -20,18 +22,16 @@ class GFD:
         brace_counter = 0
         in_json = False
 
+        # Start a separate thread for sending heartbeats
+        threading.Thread(target=self.heartbeat_sender, args=(conn, addr), daemon=True).start()
+
         while True:
             try:
-                # Send heartbeat to LFD
-                self.send_heartbeat(conn, addr)
-
-                # Receive message from LFD
                 data = conn.recv(1024).decode()
                 if not data:
                     print(f"LFD at {addr} disconnected.")
                     break
 
-                # Add incoming data to buffer
                 buffer += data
 
                 # Parse buffer for complete JSON objects
@@ -63,20 +63,19 @@ class GFD:
                                         message = json.loads(json_str)
                                         print(f"Received message from LFD at {addr}: {message}")
 
-                                        # Check for 'add' or 'delete' action for a replica
+                                        # Extract 'message' field to determine action
                                         action = message.get("message")
-                                        replica_id = message.get("client_id")
+
                                         if action.startswith("add replica"):
                                             _, _, replica = action.partition("add replica ")
                                             replica = replica.strip()
                                             self.add_replica(replica)
-                                        elif action.startswith("delete replica"):
-                                            _, _, replica = action.partition("delete replica ")
+                                        elif action.startswith("remove replica"):
+                                            _, _, replica = action.partition("remove replica ")
                                             replica = replica.strip()
                                             self.delete_replica(replica)
-                                            self.delete_replica(replica_id)
                                         elif action == "heartbeat response":
-                                            print(f"Heartbeat response received from {replica_id} at {addr}")
+                                            print(f"Heartbeat response received from LFD at {addr}")
                                         else:
                                             print(f"Unknown action '{action}' from {addr}")
 
@@ -92,36 +91,49 @@ class GFD:
                 break
 
         conn.close()
+        print(f"Connection with LFD at {addr} closed.")
 
-    def send_heartbeat(self, conn, addr):
-        try:
-            # Sending heartbeat message
-            message = {
-                "message": "heartbeat",
-                "gfd_id": "GFD",
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-            }
-            conn.sendall((json.dumps(message)).encode())  # No newline delimiter
-            print(f"Sent heartbeat to LFD at {addr}")
-            time.sleep(self.heartbeat_interval)  # Wait before sending the next heartbeat
+    def heartbeat_sender(self, conn, addr):
+        while True:
+            try:
+                # Sending heartbeat message
+                message = {
+                    "message": "heartbeat",
+                    "gfd_id": "GFD",
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+                }
+                conn.sendall(json.dumps(message).encode())  # No newline delimiter
+                print(f"Sent heartbeat to LFD at {addr}")
+                time.sleep(self.heartbeat_interval)  # Wait before sending the next heartbeat
 
-        except socket.error as e:
-            print(f"Failed to send heartbeat to LFD at {addr}: {e}")
-            conn.close()
+            except socket.error as e:
+                print(f"Failed to send heartbeat to LFD at {addr}: {e}")
+                conn.close()
+                break
 
     def add_replica(self, replica_id):
-        if replica_id not in self.membership:
-            self.membership[replica_id] = time.time()
-            print(f"Replica {replica_id} added to membership")
-        else:
-            print(f"Replica {replica_id} already exists in membership")
+        with self.lock:
+            if replica_id not in self.membership:
+                self.membership[replica_id] = time.time()
+                print(f"Replica {replica_id} added to membership")
+                self.print_membership()
+            else:
+                print(f"Replica {replica_id} already exists in membership")
 
     def delete_replica(self, replica_id):
-        if replica_id in self.membership:
-            del self.membership[replica_id]
-            print(f"Replica {replica_id} deleted from membership")
-        else:
-            print(f"Replica {replica_id} not found in membership")
+        with self.lock:
+            if replica_id in self.membership:
+                del self.membership[replica_id]
+                print(f"Replica {replica_id} deleted from membership")
+                self.print_membership()
+            else:
+                print(f"Replica {replica_id} not found in membership")
+
+    def print_membership(self):
+        with self.lock:
+            member_count = len(self.membership)
+            members = ", ".join(self.membership.keys())
+            print(f"GFD: {member_count} member{'s' if member_count != 1 else ''}: {members}")
 
     def start(self):
         while True:
@@ -129,11 +141,9 @@ class GFD:
             threading.Thread(target=self.handle_lfd_connection, args=(conn, addr), daemon=True).start()
 
 def main():
-    
     GFD_IP = '0.0.0.0'
     GFD_PORT = 12345
 
-    
     gfd = GFD(GFD_IP, GFD_PORT, heartbeat_interval=5)
 
     try:
