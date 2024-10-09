@@ -1,7 +1,6 @@
 import socket
 import json
 import time
-import uuid
 from queue import Queue, Empty
 
 # Define color functions for printing
@@ -13,25 +12,64 @@ def prPurple(skk): print("\033[95m{}\033[00m".format(skk))
 def prCyan(skk): print("\033[96m{}\033[00m".format(skk))
 
 class Server:
-    def __init__(self, server_ip, server_port, server_id):
+    def __init__(self, server_ip, server_port, server_id, lfd_ip, lfd_port):
         self.server_ip = server_ip
         self.server_port = server_port
         self.server_id = server_id
+        self.lfd_ip = lfd_ip
+        self.lfd_port = lfd_port
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setblocking(False)  # Non-blocking mode
         self.message_queue = Queue()
         self.clients = {}
         self.state = 0  # Initial state
+        self.lfd_socket = None
 
     def start(self):
         try:
             self.server_socket.bind((self.server_ip, self.server_port))
             self.server_socket.listen(3)  # Listen for up to 3 simultaneous connections
             prGreen(f"Server listening on {self.server_ip}:{self.server_port}")
+            self.connect_to_lfd()  # Try to connect to LFD on start
         except Exception as e:
             prRed(f"Failed to start server: {e}")
             return False
         return True
+
+    def connect_to_lfd(self):
+        try:
+            self.lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.lfd_socket.connect((self.lfd_ip, self.lfd_port))
+            prGreen(f"Connected to LFD at {self.lfd_ip}:{self.lfd_port}")
+        except Exception as e:
+            prRed(f"Failed to connect to LFD: {e}")
+            self.lfd_socket = None
+
+    def receive_messages_from_lfd(self):
+        if self.lfd_socket:
+            try:
+                response = self.lfd_socket.recv(1024).decode()
+                if response:
+                    message = json.loads(response)
+                    prCyan(f"Received message from LFD: {message}")
+                    timestamp = message.get('timestamp', 'Unknown')
+                    content = message.get('message', 'Unknown')
+                    prYellow(f"LFD -> Server: {content} at {timestamp}")
+
+                    # Process heartbeat or other messages here
+                    if content.lower() == 'heartbeat':
+                        prGreen("Heartbeat received from LFD.")
+                        # Optionally, send an acknowledgment back
+                        response = {
+                            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
+                            "server_id": self.server_id,
+                            "message": "heartbeat acknowledgment"
+                        }
+                        self.lfd_socket.sendall(json.dumps(response).encode())
+                        prGreen("Sent heartbeat acknowledgment to LFD.")
+
+            except (socket.error, json.JSONDecodeError):
+                prRed("Failed to receive or parse message from LFD.")
 
     def accept_new_connection(self):
         try:
@@ -129,14 +167,18 @@ class Server:
         for client_socket in list(self.clients):
             self.disconnect_client(client_socket)
         self.server_socket.close()
+        if self.lfd_socket:
+            self.lfd_socket.close()
         prRed("Server shutdown.")
 
 def main():
     SERVER_IP = '0.0.0.0'
     SERVER_PORT = 12345
     SERVER_ID = 'S2'
+    LFD_IP = '0.0.0.0'  # Replace with LFD IP (same machine, hence localhost)
+    LFD_PORT = 54321  # Replace with LFD listening port
 
-    server = Server(SERVER_IP, SERVER_PORT, SERVER_ID)
+    server = Server(SERVER_IP, SERVER_PORT, SERVER_ID, LFD_IP, LFD_PORT)
 
     if not server.start():
         return
@@ -153,9 +195,12 @@ def main():
             
             # Process all messages in the queue
             server.process_messages()
-            
+
+            # Receive messages from LFD
+            server.receive_messages_from_lfd()
+
             # Sleep briefly to avoid high CPU usage
-            time.sleep(0.1)
+            time.sleep(2)  # Adjust the sleep time to avoid excessive CPU usage
     except KeyboardInterrupt:
         prYellow("Server is shutting down...")
     finally:
