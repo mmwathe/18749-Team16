@@ -70,12 +70,12 @@ class Server:
             message = json.loads(data)
             timestamp = message.get('timestamp', 'Unknown')
             client_id = message.get('client_id', 'Unknown')
-            message_content = message.get('message', 'Unknown')
+            content = message.get('message', 'Unknown')
             message_id = message.get('message_id', 'Unknown')
 
             prPurple("=" * 80)
 
-            if message_content.lower() == 'heartbeat':
+            if content.lower() == 'heartbeat':
                 prRed(f"{timestamp:<20} {'Received heartbeat from:':<20} {client_id}")
                 prRed(f"{'':<20} {'Sending heartbeat...'}")
                 response = {
@@ -84,10 +84,11 @@ class Server:
                     "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
                     "state": self.state
                 }
+
             else:
                 prYellow(f"{timestamp:<20} C{client_id} -> {self.server_id}")
                 prLightPurple(f"{'':<20} {'Message ID:':<15} {message_id}")
-                prLightPurple(f"{'':<20} {'Message:':<15} {message_content}")
+                prLightPurple(f"{'':<20} {'Message:':<15} {content}")
 
                 # Handle the message content and update state if necessary
                 state_before = self.state
@@ -99,17 +100,17 @@ class Server:
                     "state_after": self.state
                 }
 
-                if message_content.lower() == 'ping':
+                if content.lower() == 'ping':
                     response["message"] = "pong"
                     prGreen(f"{'':<20} Sending 'pong' response...")
-                elif message_content.lower() == 'update':
+                elif content.lower() == 'update':
                     self.state += 1
                     response["message"] = "state updated"
                     response["state_after"] = self.state
                     prGreen(f"{'':<20} {'State updated:':<15} {state_before} -> {self.state}")
                 else:
                     response["message"] = "unknown command"
-                    prRed(f"{'':<20} {'Received unknown message:':<15} {message_content}")
+                    prRed(f"{'':<20} {'Received unknown message:':<15} {content}")
 
             client_socket.sendall(json.dumps(response).encode())
         except json.JSONDecodeError:
@@ -128,10 +129,10 @@ class Server:
         prRed("Server shutdown.")
 
 def main():
-    SERVER_IP = '0.0.0.0'  # Listen on all available interfaces
+    # print(socket.gethostbyname(socket.gethostname()))
+    SERVER_IP = '0.0.0.0'
     SERVER_PORT = 12345
     SERVER_ID = 'S1'
-    # SERVER_ID = str(uuid.uuid4())  # Unique Server ID
 
     server = Server(SERVER_IP, SERVER_PORT, SERVER_ID)
 
