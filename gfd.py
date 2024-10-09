@@ -66,10 +66,14 @@ class GFD:
                                         # Check for 'add' or 'delete' action for a replica
                                         action = message.get("message")
                                         replica_id = message.get("client_id")
-                                        if action == "add replica S1":
-                                            self.add_replica(replica_id)
-                                        elif action == "delete replica S1":
-                                            self.delete_replica(replica_id)
+                                        if action.startswith("add replica"):
+                                            _, _, replica = action.partition("add replica ")
+                                            replica = replica.strip()
+                                            self.add_replica(replica)
+                                        elif action.startswith("delete replica"):
+                                            _, _, replica = action.partition("delete replica ")
+                                            replica = replica.strip()
+                                            self.delete_replica(replica)
                                         elif action == "heartbeat response":
                                             print(f"Heartbeat response received from {replica_id} at {addr}")
                                         else:
