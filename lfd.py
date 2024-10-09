@@ -27,6 +27,7 @@ class LFD:
         self.gfd_socket = None
         self.server_socket = None
         self.server_connected = False
+        self.server_id = None  # To store server ID once received
 
     def wait_for_server(self):
         """Wait for the server to connect to the LFD in non-blocking mode."""
@@ -36,8 +37,9 @@ class LFD:
             self.server_socket, server_address = self.lfd_socket.accept()
             prGreen(f"Server connected from {server_address}")
             self.server_connected = True
+            self.server_id = f"{server_address}"  # Default to address until we get an actual server ID
             # Notify GFD about the server connection
-            self.notify_gfd("server_connected", server_address)
+            self.notify_gfd("add replica", {"server_id": self.server_id})
         except socket.timeout:
             pass  # No server connected yet, continue the loop
         except Exception as e:
@@ -61,10 +63,10 @@ class LFD:
             return
 
         message = {
-            "event": event_type,
+            "message": event_type,
             "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
             "lfd_id": self.client_id,
-            "event_data": event_data
+            "message_data": event_data
         }
 
         try:
@@ -99,6 +101,10 @@ class LFD:
             timestamp = response_data.get('timestamp', 'Unknown')
             message = response_data.get('message', 'Unknown')
             state = response_data.get('state', 'Unknown')
+
+            # Update the server_id if available
+            if server_id != 'Unknown':
+                self.server_id = server_id
 
             prPurple("=" * 80)
             prYellow(f"{timestamp:<20} {server_id} -> {self.client_id}")
@@ -137,7 +143,7 @@ class LFD:
             if response is None:
                 prRed("Server did not respond to the heartbeat.")
                 # Notify GFD that the server has disconnected
-                self.notify_gfd("server_disconnected", "No response from server")
+                self.notify_gfd("remove replica", {"server_id": self.server_id})
                 # If server does not respond, terminate connection and wait for reconnection
                 self.server_socket.close()
                 self.server_connected = False
@@ -148,7 +154,7 @@ class LFD:
     def close_connection(self):
         if self.server_socket:
             # Notify GFD that the server has disconnected
-            self.notify_gfd("server_disconnected", "LFD shutting down")
+            self.notify_gfd("remove replica", {"server_id": self.server_id, "reason": "LFD shutting down"})
             self.server_socket.close()
         if self.lfd_socket:
             self.lfd_socket.close()
