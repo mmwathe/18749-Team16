@@ -34,7 +34,7 @@ class LFD:
             self.server_socket, self.server_address = self.lfd_socket.accept()
             prGreen(f"Server connected from {self.server_address}")
             # Notify GFD about the server connection
-            self.notify_gfd("add replica " + self.server_address, self.server_address)
+            self.notify_gfd("add replica S1", self.server_address)
             return True
         except Exception as e:
             prRed(f"Failed to accept server connection: {e}")
@@ -133,7 +133,7 @@ class LFD:
         if response is None:
             prRed("Server did not respond to the heartbeat.")
             # Notify GFD that the server has disconnected
-            self.notify_gfd("remove replica " + self.server_address, "No response from server")
+            self.notify_gfd("remove replica S1", "No response from server")
             # If server does not respond, terminate connection and wait for reconnection
             self.server_socket.close()
             self.wait_for_server()
@@ -146,7 +146,7 @@ class LFD:
     def close_connection(self):
         if self.server_socket:
             # Notify GFD that the server has disconnected
-            self.notify_gfd("remove replica " + self.server_address, "LFD shutting down")
+            self.notify_gfd("remove replica S1", "LFD shutting down")
             self.server_socket.close()
         if self.lfd_socket:
             self.lfd_socket.close()
