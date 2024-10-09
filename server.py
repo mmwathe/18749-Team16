@@ -72,6 +72,7 @@ class Server:
             client_id = message.get('client_id', 'Unknown')
             content = message.get('message', 'Unknown')
             message_id = message.get('message_id', 'Unknown')
+            request_number = message.get("request_number", "Unknown")
 
             prPurple("=" * 80)
 
@@ -97,7 +98,8 @@ class Server:
                     "server_id": self.server_id,
                     "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
                     "state_before": state_before,
-                    "state_after": self.state
+                    "state_after": self.state,
+                    "request_number": request_number
                 }
 
                 if content.lower() == 'ping':
@@ -132,7 +134,7 @@ def main():
     # print(socket.gethostbyname(socket.gethostname()))
     SERVER_IP = '0.0.0.0'
     SERVER_PORT = 12345
-    SERVER_ID = 'S1'
+    SERVER_ID = 'S2'
 
     server = Server(SERVER_IP, SERVER_PORT, SERVER_ID)
 
