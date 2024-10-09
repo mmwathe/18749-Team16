@@ -1,7 +1,6 @@
 import socket
 import json
 import time
-import uuid
 from queue import Queue, Empty
 
 # Define color functions for printing
@@ -13,25 +12,64 @@ def prPurple(skk): print("\033[95m{}\033[00m".format(skk))
 def prCyan(skk): print("\033[96m{}\033[00m".format(skk))
 
 class Server:
-    def __init__(self, server_ip, server_port, server_id):
+    def __init__(self, server_ip, server_port, server_id, lfd_ip, lfd_port):
         self.server_ip = server_ip
         self.server_port = server_port
         self.server_id = server_id
+        self.lfd_ip = lfd_ip
+        self.lfd_port = lfd_port
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setblocking(False)  # Non-blocking mode
         self.message_queue = Queue()
         self.clients = {}
         self.state = 0  # Initial state
+        self.lfd_socket = None
 
     def start(self):
         try:
             self.server_socket.bind((self.server_ip, self.server_port))
             self.server_socket.listen(3)  # Listen for up to 3 simultaneous connections
             prGreen(f"Server listening on {self.server_ip}:{self.server_port}")
+            self.connect_to_lfd()  # Try to connect to LFD on start
         except Exception as e:
             prRed(f"Failed to start server: {e}")
             return False
         return True
+
+    def connect_to_lfd(self):
+        try:
+            self.lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.lfd_socket.connect((self.lfd_ip, self.lfd_port))
+            prGreen(f"Connected to LFD at {self.lfd_ip}:{self.lfd_port}")
+        except Exception as e:
+            prRed(f"Failed to connect to LFD: {e}")
+            self.lfd_socket = None
+
+    def receive_messages_from_lfd(self):
+        if self.lfd_socket:
+            try:
+                response = self.lfd_socket.recv(1024).decode()
+                if response:
+                    message = json.loads(response)
+                    prCyan(f"Received message from LFD: {message}")
+                    timestamp = message.get('timestamp', 'Unknown')
+                    content = message.get('message', 'Unknown')
+                    prYellow(f"LFD -> Server: {content} at {timestamp}")
+
+                    # Process heartbeat or other messages here
+                    if content.lower() == 'heartbeat':
+                        prGreen("Heartbeat received from LFD.")
+                        # Optionally, send an acknowledgment back
+                        response = {
+                            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
+                            "server_id": self.server_id,
+                            "message": "heartbeat acknowledgment"
+                        }
+                        self.lfd_socket.sendall(json.dumps(response).encode())
+                        prGreen("Sent heartbeat acknowledgment to LFD.")
+
+            except (socket.error, json.JSONDecodeError):
+                prRed("Failed to receive or parse message from LFD.")
 
     def accept_new_connection(self):
         try:
@@ -70,12 +108,13 @@ class Server:
             message = json.loads(data)
             timestamp = message.get('timestamp', 'Unknown')
             client_id = message.get('client_id', 'Unknown')
-            message_content = message.get('message', 'Unknown')
+            content = message.get('message', 'Unknown')
             message_id = message.get('message_id', 'Unknown')
+            request_number = message.get("request_number", "Unknown")
 
             prPurple("=" * 80)
 
-            if message_content.lower() == 'heartbeat':
+            if content.lower() == 'heartbeat':
                 prRed(f"{timestamp:<20} {'Received heartbeat from:':<20} {client_id}")
                 prRed(f"{'':<20} {'Sending heartbeat...'}")
                 response = {
@@ -84,10 +123,12 @@ class Server:
                     "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
                     "state": self.state
                 }
+
             else:
                 prYellow(f"{timestamp:<20} C{client_id} -> {self.server_id}")
                 prLightPurple(f"{'':<20} {'Message ID:':<15} {message_id}")
-                prLightPurple(f"{'':<20} {'Message:':<15} {message_content}")
+                prLightPurple(f"{'':<20} {'Message:':<15} {content}")
+                prLightPurple(f"{'':<20} {'Request Number:':<15} {request_number}")
 
                 # Handle the message content and update state if necessary
                 state_before = self.state
@@ -96,20 +137,21 @@ class Server:
                     "server_id": self.server_id,
                     "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
                     "state_before": state_before,
-                    "state_after": self.state
+                    "state_after": self.state,
+                    "request_number": request_number
                 }
 
-                if message_content.lower() == 'ping':
+                if content.lower() == 'ping':
                     response["message"] = "pong"
                     prGreen(f"{'':<20} Sending 'pong' response...")
-                elif message_content.lower() == 'update':
+                elif content.lower() == 'update':
                     self.state += 1
                     response["message"] = "state updated"
                     response["state_after"] = self.state
                     prGreen(f"{'':<20} {'State updated:':<15} {state_before} -> {self.state}")
                 else:
                     response["message"] = "unknown command"
-                    prRed(f"{'':<20} {'Received unknown message:':<15} {message_content}")
+                    prRed(f"{'':<20} {'Received unknown message:':<15} {content}")
 
             client_socket.sendall(json.dumps(response).encode())
         except json.JSONDecodeError:
@@ -125,15 +167,18 @@ class Server:
         for client_socket in list(self.clients):
             self.disconnect_client(client_socket)
         self.server_socket.close()
+        if self.lfd_socket:
+            self.lfd_socket.close()
         prRed("Server shutdown.")
 
 def main():
-    SERVER_IP = '0.0.0.0'  # Listen on all available interfaces
+    SERVER_IP = '0.0.0.0'
     SERVER_PORT = 12345
-    SERVER_ID = 'S1'
-    # SERVER_ID = str(uuid.uuid4())  # Unique Server ID
+    SERVER_ID = 'S2'
+    LFD_IP = '0.0.0.0'  # Replace with LFD IP (same machine, hence localhost)
+    LFD_PORT = 54321  # Replace with LFD listening port
 
-    server = Server(SERVER_IP, SERVER_PORT, SERVER_ID)
+    server = Server(SERVER_IP, SERVER_PORT, SERVER_ID, LFD_IP, LFD_PORT)
 
     if not server.start():
         return
@@ -150,9 +195,12 @@ def main():
             
             # Process all messages in the queue
             server.process_messages()
-            
+
+            # Receive messages from LFD
+            server.receive_messages_from_lfd()
+
             # Sleep briefly to avoid high CPU usage
-            time.sleep(0.1)
+            time.sleep(2)  # Adjust the sleep time to avoid excessive CPU usage
     except KeyboardInterrupt:
         prYellow("Server is shutting down...")
     finally:

@@ -13,22 +13,24 @@ def prPurple(skk): print(f"\033[95m{skk}\033[00m")
 def prCyan(skk): print(f"\033[96m{skk}\033[00m")
 
 class LFD:
-    def __init__(self, server_ip, server_port, client_id, heartbeat_interval=2):
-        self.server_ip = server_ip
-        self.server_port = server_port
+    def __init__(self, lfd_ip, lfd_port, client_id, heartbeat_interval=2):
+        self.lfd_ip = lfd_ip
+        self.lfd_port = lfd_port
         self.client_id = client_id
         self.heartbeat_interval = heartbeat_interval
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_alive = True
+        self.lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.lfd_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.lfd_socket.bind((self.lfd_ip, self.lfd_port))
+        self.lfd_socket.listen(1)  # Listen for one connection (the server)
 
-    def connect(self):
+    def wait_for_server(self):
+        prYellow(f"LFD waiting for server to connect on {self.lfd_ip}:{self.lfd_port}...")
         try:
-            self.socket.connect((self.server_ip, self.server_port))
-            prGreen(f"Connected to server at {self.server_ip}:{self.server_port}")
+            self.server_socket, server_address = self.lfd_socket.accept()
+            prGreen(f"Server connected from {server_address}")
             return True
         except Exception as e:
-            prRed(f"Failed to connect to server: {e}")
-            self.server_alive = False
+            prRed(f"Failed to accept server connection: {e}")
             return False
 
     def send_heartbeat(self):
@@ -42,30 +44,28 @@ class LFD:
 
         # Attempt to send the heartbeat message with error handling
         try:
-            prYellow(str(message))  # Print the formatted heartbeat message
-            self.socket.sendall(message_json.encode())
+            prYellow(f"Sending heartbeat: {message}")
+            self.server_socket.sendall(message_json.encode())
         except socket.error as e:
             prRed(f"Failed to send heartbeat. Error: {e}. Retrying...")
-            # Sleep for a short time before retrying
             time.sleep(self.heartbeat_interval)
 
     def receive_response(self):
         try:
-            response = self.socket.recv(1024).decode()
-            
+            response = self.server_socket.recv(1024).decode()
             # Parse the response JSON
             response_data = json.loads(response)
             server_id = response_data.get('server_id', 'Unknown')
             timestamp = response_data.get('timestamp', 'Unknown')
             message = response_data.get('message', 'Unknown')
             state = response_data.get('state', 'Unknown')
-            
+
             # Print the parsed response in a formatted manner
             prPurple("=" * 80)
             prYellow(f"{timestamp:<20} {server_id} -> {self.client_id}")
             prLightPurple(f"{'':<20} {'Message:':<15} {message}")
             prLightPurple(f"{'':<20} {'State:':<15} {state}")
-            
+
             return response
         except (socket.error, json.JSONDecodeError):
             prRed("No response received. Server might be down or sent an invalid response.")
@@ -78,12 +78,10 @@ class LFD:
             response = self.receive_response()
 
             if response is None:
-                # No response means server did not respond within the expected time frame
                 prRed("Server did not respond to the heartbeat.")
-                # We keep the LFD running and will continue to send heartbeats
-                self.socket.close()
-                time.sleep(self.heartbeat_interval)
-                self.connect()
+                # If server does not respond, terminate connection and wait for reconnection
+                self.server_socket.close()
+                self.wait_for_server()
 
             # Calculate remaining time to sleep until the next heartbeat
             elapsed_time = time.time() - start_time
@@ -91,7 +89,8 @@ class LFD:
             time.sleep(sleep_time)
 
     def close_connection(self):
-        self.socket.close()
+        self.server_socket.close()
+        self.lfd_socket.close()
         prRed("LFD shutdown.")
 
 def main():
@@ -101,22 +100,23 @@ def main():
                         help="Frequency of heartbeat messages in seconds (default: 4 seconds).")
     args = parser.parse_args()
 
-    SERVER_IP = '0.0.0.0'
-    SERVER_PORT = 12345
+    LFD_IP = '0.0.0.0'  # LFD listens on all interfaces
+    LFD_PORT = 54321  # LFD listens on this port
     CLIENT_ID = 'LFD1'
 
     # Create an instance of LFD with the specified heartbeat frequency
-    lfd_client = LFD(SERVER_IP, SERVER_PORT, CLIENT_ID, heartbeat_interval=args.heartbeat_freq)
+    lfd = LFD(LFD_IP, LFD_PORT, CLIENT_ID, heartbeat_interval=args.heartbeat_freq)
 
-    if not lfd_client.connect():
+    # Wait for the server to connect
+    if not lfd.wait_for_server():
         return
 
     try:
-        lfd_client.monitor_server()
+        lfd.monitor_server()
     except KeyboardInterrupt:
         prYellow("LFD interrupted by user.")
     finally:
-        lfd_client.close_connection()
+        lfd.close_connection()
 
 if __name__ == '__main__':
     main()

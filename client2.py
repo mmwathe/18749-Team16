@@ -1,29 +1,26 @@
 import time
-from dotenv import load_dotenv
-import os
 from client import Client
 
 def main():
-    SERVER_IP = os.getenv('SERVER_IP')
     SERVER_PORT = 12345
-    CLIENT_ID = '2'  # Hardcoded client ID for now
+    CLIENT_ID = '2'
 
-    client = Client(SERVER_IP, SERVER_PORT, CLIENT_ID)
-
-    if not client.connect():
-        return
+    # Create a client instance that will connect to all 3 servers
+    client = Client(SERVER_PORT, CLIENT_ID)
+    client.connect()
 
     try:
         while True:
-            client.send_message("update")
+            # Send a message to all servers
+            client.send_message("ping")
             client.receive_response()
             time.sleep(2)
     except KeyboardInterrupt:
         print("Client exiting...")
     finally:
-        client.send_message("exit")  # Send exit message to server
-        client.close_connection()
+        # Send exit message to all servers and close the connections
+        client.send_message("exit")
+        client.close_connections()
 
 if __name__ == '__main__':
-    load_dotenv() 
     main()
