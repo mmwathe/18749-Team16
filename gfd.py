@@ -74,6 +74,7 @@ class GFD:
                                             _, _, replica = action.partition("delete replica ")
                                             replica = replica.strip()
                                             self.delete_replica(replica)
+                                            self.delete_replica(replica_id)
                                         elif action == "heartbeat response":
                                             print(f"Heartbeat response received from {replica_id} at {addr}")
                                         else:
