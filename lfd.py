@@ -25,15 +25,16 @@ class LFD:
         self.lfd_socket.bind((self.lfd_ip, self.lfd_port))
         self.lfd_socket.listen(1)  # Listen for one connection (the server)
         self.gfd_socket = None
+        
 
     def wait_for_server(self):
         """Wait for the server to connect to the LFD."""
         prYellow(f"LFD waiting for server to connect on {self.lfd_ip}:{self.lfd_port}...")
         try:
-            self.server_socket, server_address = self.lfd_socket.accept()
-            prGreen(f"Server connected from {server_address}")
+            self.server_socket, self.server_address = self.lfd_socket.accept()
+            prGreen(f"Server connected from {self.server_address}")
             # Notify GFD about the server connection
-            self.notify_gfd("server_connected", server_address)
+            self.notify_gfd("add replica " + self.server_address, self.server_address)
             return True
         except Exception as e:
             prRed(f"Failed to accept server connection: {e}")
@@ -57,7 +58,7 @@ class LFD:
             return
 
         message = {
-            "event": event_type,
+            "message": event_type,
             "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
             "lfd_id": self.client_id,
             "event_data": event_data
@@ -132,7 +133,7 @@ class LFD:
         if response is None:
             prRed("Server did not respond to the heartbeat.")
             # Notify GFD that the server has disconnected
-            self.notify_gfd("server_disconnected", "No response from server")
+            self.notify_gfd("remove replica " + self.server_address, "No response from server")
             # If server does not respond, terminate connection and wait for reconnection
             self.server_socket.close()
             self.wait_for_server()
@@ -145,7 +146,7 @@ class LFD:
     def close_connection(self):
         if self.server_socket:
             # Notify GFD that the server has disconnected
-            self.notify_gfd("server_disconnected", "LFD shutting down")
+            self.notify_gfd("remove replica " + self.server_address, "LFD shutting down")
             self.server_socket.close()
         if self.lfd_socket:
             self.lfd_socket.close()
