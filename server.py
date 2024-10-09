@@ -90,6 +90,7 @@ class Server:
                 prYellow(f"{timestamp:<20} C{client_id} -> {self.server_id}")
                 prLightPurple(f"{'':<20} {'Message ID:':<15} {message_id}")
                 prLightPurple(f"{'':<20} {'Message:':<15} {content}")
+                prLightPurple(f"{'':<20} {'Request Number:':<15} {request_number}")
 
                 # Handle the message content and update state if necessary
                 state_before = self.state
@@ -131,7 +132,6 @@ class Server:
         prRed("Server shutdown.")
 
 def main():
-    # print(socket.gethostbyname(socket.gethostname()))
     SERVER_IP = '0.0.0.0'
     SERVER_PORT = 12345
     SERVER_ID = 'S2'
