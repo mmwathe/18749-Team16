@@ -11,6 +11,8 @@ def prLightPurple(skk): print(f"\033[94m{skk}\033[00m")    # Light Purple
 def prPurple(skk): print(f"\033[95m{skk}\033[00m")        # Purple
 def prCyan(skk): print(f"\033[96m{skk}\033[00m")          # Cyan
 
+LFD_IPS = ['172.26.77.220', '127.0.0.1', '172.26.105.167']
+
 class GFD:
     def __init__(self, host, port, heartbeat_interval=5):
         self.host = host
@@ -69,7 +71,7 @@ class GFD:
                                     in_json = False
                                     try:
                                         message = json.loads(json_str)
-                                        prCyan(f"Received message from LFD at {addr}")
+                                        
                                         # Check for 'add' or 'remove' action for a replica
                                         action = message.get("message", "").lower()
                                         message_data = message.get("message_data", {})
@@ -87,9 +89,9 @@ class GFD:
                                             else:
                                                 prRed("Remove replica message missing 'server_id'.")
                                         elif action == "heartbeat acknowledgment":   
-                                            prYellow(f"Heartbeat acknowledgment received from {addr}")
+                                            prYellow(f"Heartbeat acknowledgment received from LFD{self.getLFDIDfromIP()[addr[0]]}")
                                         else:
-                                            prLightPurple(f"Unknown action '{action}' from {addr}")
+                                            prLightPurple(f"Unknown action '{action}' from LFD{self.getLFDIDfromIP()[addr[0]]}")
                                     except json.JSONDecodeError as e:
                                         prRed(f"Error decoding JSON message: {e}")
                                     break
@@ -97,9 +99,13 @@ class GFD:
                             # No complete JSON object found yet
                             break
             except socket.error as e:
-                prRed(f"Error receiving message from LFD at {addr}: {e}")
+                prRed(f"Error receiving message from LFD at LFD{self.getLFDIDfromIP()[addr[0]]}: {e}")
                 break
         conn.close()
+        
+        
+    def getLFDIDfromIP(self):
+        return {ip: f"{index+1}" for index, ip in enumerate(LFD_IPS)}    
 
     def send_heartbeat_continuously(self, conn, addr):
         while True:
@@ -111,7 +117,8 @@ class GFD:
                     "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
                 }
                 conn.sendall(json.dumps(message).encode())  # No newline delimiter
-                prCyan(f"Sent heartbeat to LFD at {addr}")
+                prCyan(f"Sent heartbeat to LFD{self.getLFDIDfromIP()[addr[0]]}")
+                
                 time.sleep(self.heartbeat_interval)  # Wait before sending the next heartbeat
             except socket.error as e:
                 prRed(f"Failed to send heartbeat to LFD at {addr}: {e}")
