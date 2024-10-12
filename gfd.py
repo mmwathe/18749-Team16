@@ -63,8 +63,8 @@ class GFD:
                                             _, _, replica = action.partition("add replica ")
                                             replica = replica.strip()
                                             self.add_replica(replica)
-                                        elif action.startswith("delete replica"):
-                                            _, _, replica = action.partition("delete replica ")
+                                        elif action.startswith("remove replica"):
+                                            _, _, replica = action.partition("remove replica ")
                                             replica = replica.strip()
                                             self.delete_replica(replica)
                                         elif action == "heartbeat response":
