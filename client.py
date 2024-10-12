@@ -11,7 +11,7 @@ def prLightPurple(skk): print("\033[94m{}\033[00m".format(skk))
 def prPurple(skk): print("\033[95m{}\033[00m".format(skk))
 def prCyan(skk): print("\033[96m{}\033[00m".format(skk))
 
-SERVERS_IPS = ['172.26.105.167', '172.0.0.1', '172.26.77.220']
+SERVERS_IPS = ['172.26.77.220', '172.26.0.70', '172.26.22.254']
 # SERVERS_IPS = ['172.26.117.200']
 
 

@@ -12,7 +12,7 @@ def main():
     try:
         while True:
             # Send a message to all servers
-            client.send_message("ping")
+            client.send_message("update")
             client.receive_response()
             time.sleep(2)
     except KeyboardInterrupt:

@@ -39,7 +39,7 @@ class LFD:
             self.server_connected = True
             self.server_id = f"{server_address}"  # Default to address until we get an actual server ID
             # Notify GFD about the server connection
-            self.notify_gfd("add replica", {"server_id": self.server_id})
+            self.notify_gfd("add replica", {"server_id": "S3"})
         except socket.timeout:
             pass  # No server connected yet, continue the loop
         except Exception as e:
