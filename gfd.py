@@ -2,6 +2,9 @@ import socket
 import json
 import time
 import threading
+
+LFD_IPS = ['172.26.77.220', '127.0.0.1', '172.26.105.167']
+
 class GFD:
     def __init__(self, host, port, heartbeat_interval=5):
         self.host = host
@@ -81,6 +84,10 @@ class GFD:
                 print(f"Error receiving message from LFD at {addr}: {e}")
                 break
         conn.close()
+    
+    def getLFDIDfromIP(self):
+        return {ip: f"{index+1}" for index, ip in enumerate(LFD_IPS)}
+    
     def send_heartbeat(self, conn, addr):
         try:
             # Sending heartbeat message
@@ -90,7 +97,7 @@ class GFD:
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             }
             conn.sendall((json.dumps(message)).encode())  # No newline delimiter
-            print(f"Sent heartbeat to LFD at {addr}")
+            print(f"Sent heartbeat to LFD at LFD{self.getLFDIDfromIP(addr[1])}")
             time.sleep(self.heartbeat_interval)  # Wait before sending the next heartbeat
         except socket.error as e:
             print(f"Failed to send heartbeat to LFD at {addr}: {e}")
