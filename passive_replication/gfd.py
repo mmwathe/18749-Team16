@@ -19,6 +19,8 @@ class GFD:
         self.port = port
         self.heartbeat_interval = heartbeat_interval  # Interval between heartbeats
         self.membership = {}  # To track replicas (server_id -> timestamp)
+        self.member_count = 0  # Initialize member_count to 0
+        prPurple(f"GFD: {self.member_count} members")  # Print initial member count
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.bind((self.host, self.port))
         self.server_socket.listen(5)
@@ -129,6 +131,7 @@ class GFD:
         with self.lock:
             if replica_id not in self.membership:
                 self.membership[replica_id] = time.time()
+                self.member_count += 1  # Increment member count
                 prLightPurple(f"Replica '{replica_id}' added to membership.")
                 self.print_membership()
             else:
@@ -138,6 +141,7 @@ class GFD:
         with self.lock:
             if replica_id in self.membership:
                 del self.membership[replica_id]
+                self.member_count -= 1  # Decrement member count
                 prRed(f"Replica '{replica_id}' deleted from membership.")
                 self.print_membership()
             else:

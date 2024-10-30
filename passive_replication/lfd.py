@@ -174,7 +174,7 @@ def main():
     LFD_IP = '0.0.0.0'  # LFD listens on all interfaces
     LFD_PORT = 54321  # LFD listens on this port
 
-    GFD_IP = '172.26.105.167'
+    GFD_IP = '172.26.27.214'
     GFD_PORT = 12345
 
     # Create an instance of LFD with the specified heartbeat frequency
