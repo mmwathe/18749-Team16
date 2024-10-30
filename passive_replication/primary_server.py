@@ -27,6 +27,7 @@ class PrimaryServer:
         self.checkpoint_freq = checkpoint_freq
         self.lfd_socket = None
         self.backup_sockets = []  # Connections to replicas
+        self.backups = []  # List of backup addresses for retries
 
     def start(self):
         try:
@@ -49,18 +50,23 @@ class PrimaryServer:
             self.lfd_socket = None
 
     def connect_to_backups(self, backups):
-        """Connect to backup replicas for checkpointing."""
+        """Continuously try to connect to backup replicas for checkpointing."""
+        self.backups = backups
         for ip, port in backups:
-            try:
-                backup_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                backup_socket.connect((ip, port))
-                self.backup_sockets.append(backup_socket)
-                prGreen(f"Connected to backup replica at {ip}:{port}")
-            except Exception as e:
-                prRed(f"Failed to connect to backup {ip}:{port}: {e}")
+            connected = False
+            while not connected:
+                try:
+                    backup_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    backup_socket.connect((ip, port))
+                    self.backup_sockets.append(backup_socket)
+                    prGreen(f"Connected to backup replica at {ip}:{port}")
+                    connected = True  # Exit loop once connected
+                except Exception as e:
+                    prRed(f"Failed to connect to backup {ip}:{port}. Retrying in 5 seconds...")
+                    time.sleep(5)  # Retry after delay
 
     def start_checkpointing(self):
-        """Periodically send checkpoints to replicas."""
+        """Periodically send checkpoints to connected replicas, retrying if disconnected."""
         while True:
             time.sleep(self.checkpoint_freq)
             self.checkpoint_count += 1
@@ -69,11 +75,26 @@ class PrimaryServer:
                 "checkpoint_count": self.checkpoint_count
             }
             prYellow(f"Primary: Sending checkpoint {checkpoint_data} to replicas.")
-            for backup_socket in self.backup_sockets:
+            
+            for i, (ip, port) in enumerate(self.backups):
+                backup_socket = self.backup_sockets[i] if i < len(self.backup_sockets) else None
+                
+                # Retry connection if backup_socket is None or disconnected
+                if backup_socket is None or backup_socket._closed:
+                    try:
+                        backup_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        backup_socket.connect((ip, port))
+                        self.backup_sockets[i] = backup_socket
+                        prGreen(f"Reconnected to backup replica at {ip}:{port}")
+                    except Exception as e:
+                        prRed(f"Failed to reconnect to backup {ip}:{port}. Skipping this checkpoint.")
+                        continue  # Skip to the next backup if reconnection fails
+
+                # Attempt to send the checkpoint to the backup
                 try:
                     backup_socket.sendall(json.dumps(checkpoint_data).encode())
                 except socket.error as e:
-                    prRed(f"Failed to send checkpoint to replica: {e}")
+                    prRed(f"Failed to send checkpoint to backup {ip}:{port}. Will retry next time.")
 
     def accept_new_connection(self):
         try:
@@ -174,18 +195,18 @@ class PrimaryServer:
 
 def main():
     SERVER_IP = '0.0.0.0'
-    SERVER_PORT = 12345
+    SERVER_PORT = 43210
     LFD_IP = '0.0.0.0'  # Replace with LFD IP address
     LFD_PORT = 54321
     CHECKPOINT_FREQ = 10  # Frequency for checkpointing
-    BACKUP_REPLICAS = [('0.0.0.0', 12346), ('0.0.0.0', 12347)]  # Addresses for S2 and S3
+    BACKUP_REPLICAS = [('172.26.88.54', 12346)]  # Addresses for S2 and S3
 
     server = PrimaryServer(SERVER_IP, SERVER_PORT, LFD_IP, LFD_PORT, checkpoint_freq=CHECKPOINT_FREQ)
     
     if not server.start():
         return
     
-    server.connect_to_backups(BACKUP_REPLICAS)
+    threading.Thread(target=server.connect_to_backups, args=(BACKUP_REPLICAS,), daemon=True).start()
     threading.Thread(target=server.start_checkpointing, daemon=True).start()
 
     try:

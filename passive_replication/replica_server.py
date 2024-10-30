@@ -6,7 +6,6 @@ import time
 def prGreen(skk): print("\033[92m{}\033[00m".format(skk))
 def prRed(skk): print("\033[91m{}\033[00m".format(skk))
 def prYellow(skk): print("\033[93m{}\033[00m".format(skk))
-def prLightPurple(skk): print("\033[94m{}\033[00m".format(skk))
 def prCyan(skk): print("\033[96m{}\033[00m".format(skk))
 
 class ReplicaServer:
@@ -40,6 +39,7 @@ class ReplicaServer:
         try:
             self.lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.lfd_socket.connect((self.lfd_ip, self.lfd_port))
+            self.lfd_socket.setblocking(False)
             prGreen(f"Connected to LFD at {self.lfd_ip}:{self.lfd_port}")
         except Exception as e:
             prRed(f"Failed to connect to LFD: {e}")
@@ -50,6 +50,7 @@ class ReplicaServer:
         try:
             self.primary_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.primary_socket.connect((self.primary_ip, self.primary_port))
+            self.primary_socket.setblocking(False)
             prGreen(f"Connected to Primary Server at {self.primary_ip}:{self.primary_port}")
         except Exception as e:
             prRed(f"Failed to connect to Primary Server: {e}")
@@ -70,28 +71,40 @@ class ReplicaServer:
         except json.JSONDecodeError:
             prRed("Malformed heartbeat message received from LFD.")
 
-    def receive_messages_from_lfd(self):
-        """Receive messages from LFD and handle heartbeats."""
-        if self.lfd_socket:
-            try:
-                data = self.lfd_socket.recv(1024).decode()
+    def handle_checkpoint(self, data):
+        """Process checkpoint data received from primary server."""
+        try:
+            checkpoint_data = json.loads(data)
+            self.state = checkpoint_data["my_state"]
+            self.checkpoint_count = checkpoint_data["checkpoint_count"]
+            prGreen(f"Replica: Updated state to {self.state}, checkpoint count to {self.checkpoint_count}")
+        except json.JSONDecodeError:
+            prRed("Malformed checkpoint data received from Primary.")
+
+    def receive_data(self, sock):
+        """Non-blocking receive data from a socket."""
+        try:
+            return sock.recv(1024).decode()
+        except BlockingIOError:
+            return None
+
+    def main_loop(self):
+        """Main loop to handle receiving heartbeats and checkpoints without threads."""
+        while True:
+            # Check for messages from LFD
+            if self.lfd_socket:
+                data = self.receive_data(self.lfd_socket)
                 if data:
                     self.handle_heartbeat(data)
-            except BlockingIOError:
-                pass  # No data received; continue
 
-    def receive_checkpoint_from_primary(self):
-        """Receive checkpoint updates from the primary server."""
-        if self.primary_socket:
-            try:
-                data = self.primary_socket.recv(1024).decode()
+            # Check for checkpoint updates from Primary
+            if self.primary_socket:
+                data = self.receive_data(self.primary_socket)
                 if data:
-                    checkpoint_data = json.loads(data)
-                    self.state = checkpoint_data["my_state"]
-                    self.checkpoint_count = checkpoint_data["checkpoint_count"]
-                    prGreen(f"Replica: Updated state to {self.state}, checkpoint count to {self.checkpoint_count}")
-            except (socket.error, json.JSONDecodeError) as e:
-                prRed(f"Failed to receive or process checkpoint from primary: {e}")
+                    self.handle_checkpoint(data)
+
+            # Brief sleep to prevent high CPU usage
+            time.sleep(0.1)
 
     def close_server(self):
         self.server_socket.close()
@@ -115,10 +128,7 @@ def main():
         return
 
     try:
-        while True:
-            server.receive_messages_from_lfd()
-            server.receive_checkpoint_from_primary()
-            time.sleep(2)
+        server.main_loop()
     except KeyboardInterrupt:
         prYellow("Replica server is shutting down...")
     finally:
