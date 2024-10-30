@@ -12,22 +12,35 @@ def prLightPurple(skk): print("\033[94m{}\033[00m".format(skk))
 def prPurple(skk): print("\033[95m{}\033[00m".format(skk))
 def prCyan(skk): print("\033[96m{}\033[00m".format(skk))
 
+# REPLICA_ADDRESSES = [('BACKUP_IP_1', 12346), ('BACKUP_IP_2', 12347)]
+REPLICA_ADDRESSES = [('172.26.88.54', 34567)]
+
+
 class Server:
-    def __init__(self, server_ip, server_port, lfd_ip, lfd_port, checkpoint_freq=10):
+    def __init__(self, server_ip, server_port, lfd_ip, lfd_port, is_primary_replica, checkpoint_freq=10):
         self.server_ip = server_ip
         self.server_port = server_port
         self.lfd_ip = lfd_ip
         self.lfd_port = lfd_port
+        self.is_primary_replica = is_primary_replica
+        self.checkpoint_freq = checkpoint_freq
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setblocking(False)
         self.message_queue = Queue()
         self.clients = {}
         self.state = 0
         self.checkpoint_count = 0
-        self.checkpoint_freq = checkpoint_freq
-        self.role = "replica"  # Default to replica until promoted to primary
         self.lfd_socket = None
-        self.backup_sockets = []  # Holds connections to replicas (only used by primary)
+        self.backup_sockets = []  # Connections to backups, only used by primary
+
+        # Start checkpointing if primary
+        if self.is_primary_replica:
+            prYellow("This server is set as the primary replica.")
+            threading.Thread(target=self.retry_connect_to_backups, daemon=True).start()
+            threading.Thread(target=self.start_checkpointing, daemon=True).start()
+        else:
+            prCyan("This server is set as a backup replica.")
+            threading.Thread(target=self.listen_for_checkpoints, daemon=True).start()  # Start checkpoint listener for replicas
 
     def start(self):
         try:
@@ -45,23 +58,27 @@ class Server:
             self.lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.lfd_socket.connect((self.lfd_ip, self.lfd_port))
             prGreen(f"Connected to LFD at {self.lfd_ip}:{self.lfd_port}")
-            self.become_primary_if_first()
         except Exception as e:
             prRed(f"Failed to connect to LFD: {e}")
             self.lfd_socket = None
 
-    def become_primary_if_first(self):
-        """Determine role (primary or replica) upon startup."""
-        if not self.backup_sockets:
-            self.role = "primary"
-            prYellow("This server is now the primary.")
-            threading.Thread(target=self.start_checkpointing, daemon=True).start()
-        else:
-            prCyan("This server is a backup replica.")
+    def retry_connect_to_backups(self):
+        """Primary-only: continuously attempts to connect to backup replicas."""  # Replace with actual IPs and ports
+        while len(self.backup_sockets) < len(REPLICA_ADDRESSES):
+            for address in REPLICA_ADDRESSES:
+                if address not in [sock.getpeername() for sock in self.backup_sockets]:
+                    try:
+                        backup_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        backup_socket.connect(address)
+                        self.backup_sockets.append(backup_socket)
+                        prGreen(f"Primary connected to backup at {address}")
+                    except socket.error:
+                        prYellow(f"Primary failed to connect to backup at {address}, retrying...")
+                        time.sleep(2)  # Retry delay
 
     def start_checkpointing(self):
         """Primary-only: periodically send checkpoints to replicas."""
-        while self.role == "primary":
+        while self.is_primary_replica:
             time.sleep(self.checkpoint_freq)
             self.checkpoint_count += 1
             checkpoint_data = {
@@ -73,7 +90,24 @@ class Server:
                 try:
                     backup_socket.sendall(json.dumps(checkpoint_data).encode())
                 except socket.error as e:
-                    prRed(f"Failed to send checkpoint to replica: {e}")
+                    prRed(f"Failed to send checkpoint to backup: {e}")
+
+    def listen_for_checkpoints(self):
+        """Backup-only: listens for checkpoint data from primary."""
+        checkpoint_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        checkpoint_listener.bind((self.server_ip, self.server_port + 1))  # Listening port for checkpoints
+        checkpoint_listener.listen(5)
+        prCyan(f"Backup listening for checkpoints on {self.server_ip}:{self.server_port + 1}")
+        
+        while not self.is_primary_replica:
+            try:
+                primary_socket, address = checkpoint_listener.accept()
+                with primary_socket:
+                    data = primary_socket.recv(1024).decode()
+                    if data:
+                        self.receive_checkpoint(data)
+            except socket.error:
+                time.sleep(1)
 
     def receive_checkpoint(self, data):
         """Replica-only: update state based on checkpoint data from primary."""
@@ -92,7 +126,7 @@ class Server:
             pass
 
     def receive_messages(self):
-        if self.role != "primary":
+        if not self.is_primary_replica:
             return  # Replicas do not handle client messages
 
         for client_socket in list(self.clients):
@@ -106,7 +140,7 @@ class Server:
                 pass
 
     def process_messages(self):
-        if self.role != "primary":
+        if not self.is_primary_replica:
             return  # Replicas do not process messages
 
         try:
@@ -129,7 +163,7 @@ class Server:
             state_before = self.state
             response = {
                 "message": "",
-                "server_id": self.role,
+                "server_id": "primary",
                 "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
                 "state_before": state_before,
                 "state_after": self.state,
@@ -154,7 +188,7 @@ class Server:
                 prGreen("Heartbeat received from LFD. Acknowledging...")
                 response = {
                     "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
-                    "server_id": self.role,
+                    "server_id": "primary" if self.is_primary_replica else "replica",
                     "message": "heartbeat acknowledgment"
                 }
                 self.lfd_socket.sendall(json.dumps(response).encode())
@@ -192,8 +226,11 @@ def main():
     LFD_PORT = 54321
     CHECKPOINT_FREQ = 10  # Frequency for checkpointing
 
-    server = Server(SERVER_IP, SERVER_PORT, LFD_IP, LFD_PORT, checkpoint_freq=CHECKPOINT_FREQ)
-    
+    # Manually set whether this server is primary or replica
+    IS_PRIMARY_REPLICA = True  # Set to True for primary, False for backups
+
+    server = Server(SERVER_IP, SERVER_PORT, LFD_IP, LFD_PORT, is_primary_replica=IS_PRIMARY_REPLICA, checkpoint_freq=CHECKPOINT_FREQ)
+
     if not server.start():
         return
 
