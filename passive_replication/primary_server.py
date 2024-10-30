@@ -23,9 +23,10 @@ class PrimaryServer:
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server_socket.bind((self.server_ip, self.server_port))
         self.server_socket.listen(5)
-        self.server_socket.settimeout(1.0)  # Set timeout for non-blocking client and replica connections
+        self.server_socket.settimeout(1.0)  # Non-blocking for connection attempts
         self.lfd_socket = None
-        self.replica_socket = None
+        self.replicas = []
+        self.replica_count = 2  # Expecting exactly 2 replicas
         self.clients = {}
         self.message_queue = Queue()
         self.last_checkpoint_time = time.time()
@@ -44,16 +45,21 @@ class PrimaryServer:
                 time.sleep(5)
                 self.lfd_socket = None
 
-    def attempt_replica_connection(self):
-        """Attempt to connect to a replica without blocking main execution."""
+    def accept_connections_in_order(self):
+        """Accept connections in a specific order: 2 replicas, then clients."""
         try:
-            prYellow(f"Attempting to accept replica connection on {self.server_ip}:{self.server_port}...")
-            self.replica_socket, replica_address = self.server_socket.accept()
-            prGreen(f"Replica connected from {replica_address}")
+            conn, addr = self.server_socket.accept()
+            conn.setblocking(False)
+            if len(self.replicas) < self.replica_count:
+                # Treat the connection as a replica if we're still expecting replicas
+                self.replicas.append(conn)
+                prGreen(f"Connected to replica from {addr}")
+            else:
+                # Treat the connection as a client once all replicas are connected
+                self.clients[conn] = addr
+                prCyan(f"Connected to client from {addr}")
         except socket.timeout:
-            pass  # No replica connected yet, continue without blocking
-        except Exception as e:
-            prRed(f"Failed to accept replica connection: {e}")
+            pass  # No connection available, continue without blocking
 
     def send_heartbeat_to_lfd(self):
         """Send a heartbeat message to the LFD."""
@@ -81,8 +87,8 @@ class PrimaryServer:
                 prRed("Failed to receive or parse heartbeat from LFD.")
                 self.lfd_socket = None  # Reset LFD socket if it fails
 
-    def send_checkpoint_to_replica(self):
-        """Send a checkpoint to the connected replica."""
+    def send_checkpoint_to_replicas(self):
+        """Send a checkpoint to all connected replicas."""
         checkpoint_data = {
             "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
             "server_id": "primary",
@@ -91,36 +97,26 @@ class PrimaryServer:
         }
         checkpoint_message = json.dumps(checkpoint_data)
 
-        try:
-            prYellow(f"Sending checkpoint to replica: {checkpoint_data}")
-            self.replica_socket.sendall(checkpoint_message.encode())
-        except socket.error as e:
-            prRed(f"Failed to send checkpoint to replica. Error: {e}")
-            self.replica_socket.close()
-            self.replica_socket = None  # Disconnect replica
+        for replica in self.replicas:
+            try:
+                prYellow(f"Sending checkpoint to replica: {checkpoint_data}")
+                replica.sendall(checkpoint_message.encode())
+            except socket.error as e:
+                prRed(f"Failed to send checkpoint to replica. Error: {e}")
+                replica.close()
+                self.replicas.remove(replica)  # Remove failed replica
 
-    def receive_ack_from_replica(self):
-        """Receive acknowledgment from the replica after sending a checkpoint."""
-        try:
-            response = self.replica_socket.recv(1024).decode()
-            response_data = json.loads(response)
-            prCyan(f"Received acknowledgment from replica: {response_data}")
-            return response_data
-        except (socket.error, json.JSONDecodeError):
-            prRed("Failed to receive acknowledgment from replica. Replica might be down.")
-            self.replica_socket.close()
-            self.replica_socket = None  # Disconnect replica
-            return None
-
-    def accept_new_connection(self):
-        """Accept a new client connection."""
-        try:
-            client_socket, client_address = self.server_socket.accept()
-            client_socket.setblocking(False)
-            self.clients[client_socket] = client_address
-            prCyan(f"New client connection from {client_address}")
-        except socket.timeout:
-            pass  # No client available yet, continue without blocking
+    def receive_ack_from_replicas(self):
+        """Receive acknowledgment from replicas after sending a checkpoint."""
+        for replica in self.replicas:
+            try:
+                response = replica.recv(1024).decode()
+                response_data = json.loads(response)
+                prCyan(f"Received acknowledgment from replica: {response_data}")
+            except (socket.error, json.JSONDecodeError):
+                prRed("Failed to receive acknowledgment from a replica.")
+                replica.close()
+                self.replicas.remove(replica)
 
     def receive_messages_from_clients(self):
         """Receive messages from all connected clients."""
@@ -191,19 +187,17 @@ class PrimaryServer:
                 self.receive_heartbeat_from_lfd()
                 self.last_heartbeat_time = time.time()
 
-            # Attempt to connect to a replica if not connected, but don’t block main execution
-            if not self.replica_socket:
-                self.attempt_replica_connection()
+            # Accept connections in order: first replicas, then clients
+            self.accept_connections_in_order()
 
-            # Send checkpoint to replica at regular intervals
-            if self.replica_socket and (time.time() - self.last_checkpoint_time >= self.checkpoint_interval):
+            # Send checkpoints to replicas at regular intervals
+            if len(self.replicas) >= self.replica_count and (time.time() - self.last_checkpoint_time >= self.checkpoint_interval):
                 self.checkpoint_count += 1
-                self.send_checkpoint_to_replica()
-                self.receive_ack_from_replica()
+                self.send_checkpoint_to_replicas()
+                self.receive_ack_from_replicas()
                 self.last_checkpoint_time = time.time()
 
-            # Handle non-blocking client connections and messages
-            self.accept_new_connection()
+            # Handle client messages
             self.receive_messages_from_clients()
             self.process_messages()
 
@@ -214,12 +208,12 @@ class PrimaryServer:
         """Clean up connections."""
         for client_socket in list(self.clients):
             self.disconnect_client(client_socket)
+        for replica in self.replicas:
+            replica.close()
         if self.server_socket:
             self.server_socket.close()
         if self.lfd_socket:
             self.lfd_socket.close()
-        if self.replica_socket:
-            self.replica_socket.close()
         prRed("Primary server shutdown.")
 
 def main():
