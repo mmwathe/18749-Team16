@@ -80,22 +80,31 @@ class PrimaryServer:
             for i, (ip, port) in enumerate(self.backups):
                 backup_socket = self.backup_sockets[i] if i < len(self.backup_sockets) else None
                 
-                # Retry connection if backup_socket is None or disconnected
+                # Check if backup_socket is None or closed, and attempt reconnect if needed
                 if backup_socket is None or backup_socket._closed:
                     try:
                         backup_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                         backup_socket.connect((ip, port))
+                        backup_socket.settimeout(5)  # Set timeout to prevent hanging
                         self.backup_sockets[i] = backup_socket
                         prGreen(f"Reconnected to backup replica at {ip}:{port}")
                     except Exception as e:
                         prRed(f"Failed to reconnect to backup {ip}:{port}. Skipping this checkpoint.")
                         continue  # Skip to the next backup if reconnection fails
 
-                # Attempt to send the checkpoint to the backup
-                try:
-                    backup_socket.sendall(checkpoint_message.encode())  # Send with newline delimiter
-                except socket.error as e:
-                    prRed(f"Failed to send checkpoint to backup {ip}:{port}. Will retry next time.")
+                # Attempt to send the checkpoint with a retry loop
+                retry_attempts = 3
+                while retry_attempts > 0:
+                    try:
+                        backup_socket.sendall(checkpoint_message.encode())  # Send with newline delimiter
+                        prGreen(f"Checkpoint sent successfully to backup {ip}:{port}")
+                        break  # Exit the retry loop if successful
+                    except socket.error as e:
+                        retry_attempts -= 1
+                        prRed(f"Failed to send checkpoint to backup {ip}:{port}. Retries left: {retry_attempts}")
+                        time.sleep(1)  # Wait briefly before retrying
+                    if retry_attempts == 0:
+                        prRed(f"Giving up on sending checkpoint to backup {ip}:{port} for this cycle.")
 
     def accept_new_connection(self):
         try:
