@@ -200,7 +200,7 @@ def main():
     LFD_IP = '0.0.0.0'  # Replace with LFD IP address
     LFD_PORT = 54321
     CHECKPOINT_FREQ = 10  # Frequency for checkpointing
-    BACKUP_REPLICAS = [('172.26.88.54', 12346)]  # Addresses for S2 and S3
+    BACKUP_REPLICAS = [('172.26.36.98', 12346)]  # Addresses for S2 and S3
 
     server = PrimaryServer(SERVER_IP, SERVER_PORT, LFD_IP, LFD_PORT, checkpoint_freq=CHECKPOINT_FREQ)
     

@@ -1,6 +1,7 @@
 import socket
 import json
 import time
+import threading
 
 # Define color functions for printing
 def prGreen(skk): print("\033[92m{}\033[00m".format(skk))
@@ -31,6 +32,7 @@ class ReplicaServer:
             prGreen(f"Replica Server listening on {self.server_ip}:{self.server_port}")
             self.connect_to_lfd()
             self.connect_to_primary()
+            threading.Thread(target=self.start_heartbeat_listener, daemon=True).start()
         except Exception as e:
             prRed(f"Failed to start replica server: {e}")
             return False
@@ -57,6 +59,18 @@ class ReplicaServer:
             prRed(f"Failed to connect to Primary Server: {e}")
             self.primary_socket = None
 
+    def start_heartbeat_listener(self):
+        """Continuously listen for heartbeats and acknowledge them, like the primary server."""
+        while True:
+            if self.lfd_socket:
+                try:
+                    data = self.lfd_socket.recv(1024).decode()
+                    if data:
+                        self.handle_heartbeat(data)
+                except BlockingIOError:
+                    pass
+            time.sleep(1)
+
     def handle_heartbeat(self, data):
         """Process incoming heartbeat messages from LFD."""
         try:
@@ -74,7 +88,6 @@ class ReplicaServer:
 
     def handle_checkpoint(self, data):
         """Process checkpoint data received from primary server."""
-        prYellow(f"Raw checkpoint data received: {data}")  # Debug: print raw data
         try:
             checkpoint_data = json.loads(data)
             self.state = checkpoint_data["my_state"]
@@ -89,29 +102,19 @@ class ReplicaServer:
             data = sock.recv(1024).decode()
             if data:
                 buffer += data
-                # Process each complete JSON object (terminated by a newline)
-                if "\n" in buffer:
+                while "\n" in buffer:  # Process multiple messages in one recv
                     complete_data, buffer = buffer.split("\n", 1)
-                    return complete_data, buffer
-            return None, buffer
+                    self.handle_checkpoint(complete_data)
+            return buffer
         except BlockingIOError:
-            return None, buffer
+            return buffer
 
     def main_loop(self):
         """Main loop to handle receiving heartbeats and checkpoints without threads."""
         while True:
-            # Check for messages from LFD
-            if self.lfd_socket:
-                data, _ = self.receive_data(self.lfd_socket, "")
-                if data:
-                    self.handle_heartbeat(data)
-
             # Check for checkpoint updates from Primary
             if self.primary_socket:
-                data, self.primary_buffer = self.receive_data(self.primary_socket, self.primary_buffer)
-                if data:
-                    self.handle_checkpoint(data)
-
+                self.primary_buffer = self.receive_data(self.primary_socket, self.primary_buffer)
             # Brief sleep to prevent high CPU usage
             time.sleep(0.1)
 
