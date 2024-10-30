@@ -71,34 +71,36 @@ class PrimaryServer:
             time.sleep(self.checkpoint_freq)
             self.checkpoint_count += 1
             checkpoint_data = {
+                "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
+                "server_id": "primary",
                 "my_state": self.state,
                 "checkpoint_count": self.checkpoint_count
             }
-            checkpoint_message = json.dumps(checkpoint_data) + "\n"  # Add newline as a delimiter
-            prYellow(f"Primary: Sending checkpoint {checkpoint_data} to replicas.")
+            checkpoint_message = json.dumps(checkpoint_data)
+
+            prYellow(f"Primary: Sending checkpoint to replicas: {checkpoint_data}")
             
             for i, (ip, port) in enumerate(self.backups):
-                # Check if the backup socket is available
                 backup_socket = self.backup_sockets[i] if i < len(self.backup_sockets) else None
                 
-                # Reconnect if the socket is None or closed
+                # Reconnect if backup_socket is None or closed
                 if backup_socket is None or backup_socket._closed:
                     try:
                         backup_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                         backup_socket.connect((ip, port))
-                        self.backup_sockets[i] = backup_socket  # Save reconnected socket
+                        self.backup_sockets[i] = backup_socket  # Save the new connection
                         prGreen(f"Reconnected to backup replica at {ip}:{port}")
                     except Exception as e:
                         prRed(f"Failed to reconnect to backup {ip}:{port}. Skipping this checkpoint.")
-                        continue  # Skip to the next backup if reconnection fails
+                        continue  # Skip this backup if reconnection fails
 
                 # Attempt to send the checkpoint
                 try:
-                    backup_socket.sendall(checkpoint_message.encode())  # Send with newline delimiter
+                    backup_socket.sendall(checkpoint_message.encode())
                     prGreen(f"Checkpoint sent successfully to backup {ip}:{port}")
                 except socket.error as e:
-                    prRed(f"Failed to send checkpoint to backup {ip}:{port}. Will retry next cycle.")
-                    self.backup_sockets[i] = None  # Clear the socket to trigger reconnection next time
+                    prRed(f"Failed to send checkpoint to backup {ip}:{port}. Error: {e}")
+                    self.backup_sockets[i] = None  # Reset the socket for next cycle
 
     def accept_new_connection(self):
         try:
