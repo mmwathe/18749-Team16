@@ -84,14 +84,14 @@ class ReplicaServer:
             prRed("Malformed checkpoint data received from Primary.")
 
     def receive_data(self, sock, buffer):
-        """Non-blocking receive data from a socket with a buffer for incomplete data."""
+        """Non-blocking receive data from a socket with a buffer for newline-delimited data."""
         try:
             data = sock.recv(1024).decode()
             if data:
                 buffer += data
-                # Check if we have a complete JSON object (ends with }).
-                if buffer.endswith("}"):
-                    complete_data, buffer = buffer, ""
+                # Process each complete JSON object (terminated by a newline)
+                if "\n" in buffer:
+                    complete_data, buffer = buffer.split("\n", 1)
                     return complete_data, buffer
             return None, buffer
         except BlockingIOError:

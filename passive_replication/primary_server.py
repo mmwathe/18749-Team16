@@ -74,6 +74,7 @@ class PrimaryServer:
                 "my_state": self.state,
                 "checkpoint_count": self.checkpoint_count
             }
+            checkpoint_message = json.dumps(checkpoint_data) + "\n"  # Add newline as a delimiter
             prYellow(f"Primary: Sending checkpoint {checkpoint_data} to replicas.")
             
             for i, (ip, port) in enumerate(self.backups):
@@ -92,7 +93,7 @@ class PrimaryServer:
 
                 # Attempt to send the checkpoint to the backup
                 try:
-                    backup_socket.sendall(json.dumps(checkpoint_data).encode())
+                    backup_socket.sendall(checkpoint_message.encode())  # Send with newline delimiter
                 except socket.error as e:
                     prRed(f"Failed to send checkpoint to backup {ip}:{port}. Will retry next time.")
 
