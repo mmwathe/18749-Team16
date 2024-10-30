@@ -86,18 +86,23 @@ class ReplicaServer:
         except json.JSONDecodeError:
             prRed("Malformed checkpoint data received from Primary.")
 
-    def receive_data(self, sock, buffer):
-        """Receive data from a socket with a buffer for newline-delimited data."""
-        try:
-            data = sock.recv(1024).decode()
-            if data:
-                buffer += data
-                while "\n" in buffer:  # Process each complete JSON object (newline-delimited)
-                    complete_data, buffer = buffer.split("\n", 1)
-                    self.handle_checkpoint(complete_data)
-            return buffer
-        except BlockingIOError:
-            return buffer
+    def receive_checkpoint(self):
+        """Receive checkpoint messages from Primary."""
+        if self.primary_socket:
+            print("Receiving checkpoint")
+            try:
+                print("Receiving checkpoint INTERNAL")
+                data = self.primary_socket.recv(1024).decode()
+                if data:
+                    print('FUCK MY LIFE')
+                    checkpoint_data = json.loads(data.strip())  # Remove any whitespace or newline characters
+                    self.state = checkpoint_data["my_state"]
+                    self.checkpoint_count = checkpoint_data["checkpoint_count"]
+                    prYellow(f"Replica: Received checkpoint - {checkpoint_data}")
+            except BlockingIOError:
+                pass
+            except json.JSONDecodeError:
+                prRed("Malformed checkpoint data received from Primary.")
 
     def receive_messages_from_lfd(self):
         """Receive heartbeat messages from LFD."""
@@ -112,10 +117,9 @@ class ReplicaServer:
     def main_loop(self):
         """Main loop to handle receiving checkpoints and heartbeats."""
         while True:
-            # Check for checkpoint updates from Primary
-            if self.primary_socket:
-                self.primary_buffer = self.receive_data(self.primary_socket, self.primary_buffer)
-            # Check for heartbeats from LFD
+            # Receive checkpoints from Primary
+            self.receive_checkpoint()
+            # Receive heartbeats from LFD
             self.receive_messages_from_lfd()
             # Brief sleep to prevent high CPU usage
             time.sleep(1)
