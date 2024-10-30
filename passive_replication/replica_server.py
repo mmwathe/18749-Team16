@@ -22,6 +22,7 @@ class ReplicaServer:
         self.checkpoint_count = 0
         self.lfd_socket = None
         self.primary_socket = None
+        self.primary_buffer = ""  # Buffer to store incomplete data from primary
 
     def start(self):
         try:
@@ -73,6 +74,7 @@ class ReplicaServer:
 
     def handle_checkpoint(self, data):
         """Process checkpoint data received from primary server."""
+        prYellow(f"Raw checkpoint data received: {data}")  # Debug: print raw data
         try:
             checkpoint_data = json.loads(data)
             self.state = checkpoint_data["my_state"]
@@ -81,25 +83,32 @@ class ReplicaServer:
         except json.JSONDecodeError:
             prRed("Malformed checkpoint data received from Primary.")
 
-    def receive_data(self, sock):
-        """Non-blocking receive data from a socket."""
+    def receive_data(self, sock, buffer):
+        """Non-blocking receive data from a socket with a buffer for incomplete data."""
         try:
-            return sock.recv(1024).decode()
+            data = sock.recv(1024).decode()
+            if data:
+                buffer += data
+                # Check if we have a complete JSON object (ends with }).
+                if buffer.endswith("}"):
+                    complete_data, buffer = buffer, ""
+                    return complete_data, buffer
+            return None, buffer
         except BlockingIOError:
-            return None
+            return None, buffer
 
     def main_loop(self):
         """Main loop to handle receiving heartbeats and checkpoints without threads."""
         while True:
             # Check for messages from LFD
             if self.lfd_socket:
-                data = self.receive_data(self.lfd_socket)
+                data, _ = self.receive_data(self.lfd_socket, "")
                 if data:
                     self.handle_heartbeat(data)
 
             # Check for checkpoint updates from Primary
             if self.primary_socket:
-                data = self.receive_data(self.primary_socket)
+                data, self.primary_buffer = self.receive_data(self.primary_socket, self.primary_buffer)
                 if data:
                     self.handle_checkpoint(data)
 
