@@ -1,6 +1,7 @@
 import socket
 import json
 import time
+import errno
 from queue import Queue, Empty
 
 # Define color functions for printing
@@ -103,20 +104,28 @@ class PrimaryServer:
                 replica.sendall(checkpoint_message.encode())
             except socket.error as e:
                 prRed(f"Failed to send checkpoint to replica. Error: {e}")
-                replica.close()
-                self.replicas.remove(replica)  # Remove failed replica
+                #replica.close()
+                #self.replicas.remove(replica)  # Remove failed replica
 
     def receive_ack_from_replicas(self):
         """Receive acknowledgment from replicas after sending a checkpoint."""
         for replica in self.replicas:
-            try:
-                response = replica.recv(1024).decode()
-                response_data = json.loads(response)
-                prCyan(f"Received acknowledgment from replica: {response_data}")
-            except (socket.error, json.JSONDecodeError):
-                prRed("Failed to receive acknowledgment from a replica.")
-                replica.close()
-                self.replicas.remove(replica)
+            retries = 5
+            retry_delay = .1
+            for _ in range(retries):
+                try:
+                    response = replica.recv(1024).decode()
+                    response_data = json.loads(response)
+                    prCyan(f"Received acknowledgment from replica: {response_data}")
+                    break
+                except (socket.error, json.JSONDecodeError) as e:
+                    if isinstance(e, socket.error) and (e.errno == errno.EAGAIN or e.errno == errno.EWOULDBLOCK):
+                        time.sleep(retry_delay)
+                    else:
+                        prRed(f"Failed to receive acknowledgment from a replica {e}")
+                        break
+                    #replica.close()
+                    #self.replicas.remove(replica)
 
     def receive_messages_from_clients(self):
         """Receive messages from all connected clients."""
