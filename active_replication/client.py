@@ -2,6 +2,8 @@ import socket
 import json
 from message import Message
 from collections import defaultdict
+import os
+from dotenv import load_dotenv
 
 # Define color functions for printing
 def prGreen(skk): print("\033[92m{}\033[00m".format(skk))
@@ -11,7 +13,7 @@ def prLightPurple(skk): print("\033[94m{}\033[00m".format(skk))
 def prPurple(skk): print("\033[95m{}\033[00m".format(skk))
 def prCyan(skk): print("\033[96m{}\033[00m".format(skk))
 
-SERVERS_IPS = ['172.26.77.220', '172.26.0.70', '172.26.22.254']
+SERVERS_IPS = [os.getenv(CLIENT_SERVER_PORT1), os.getenv(CLIENT_SERVER_PORT2), os.getenv(CLIENT_SERVER_PORT3)]
 # SERVERS_IPS = ['172.26.117.200']
 
 
