@@ -2,6 +2,8 @@ import socket
 import json
 import time
 from queue import Queue, Empty
+import os
+from dotenv import load_dotenv
 
 # Define color functions for printing
 def prGreen(skk): print("\033[92m{}\033[00m".format(skk))
@@ -174,7 +176,7 @@ class Server:
 def main():
     SERVER_IP = '0.0.0.0'
     SERVER_PORT = 12345
-    SERVER_ID = 'S2'
+    SERVER_ID = os.getenv('SERVERID')
     LFD_IP = '0.0.0.0'  # Replace with LFD IP (same machine, hence localhost)
     LFD_PORT = 54321  # Replace with LFD listening port
 

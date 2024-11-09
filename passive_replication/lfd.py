@@ -3,7 +3,8 @@ import time
 import json
 import argparse
 from message import Message
-
+import os
+from dotenv import load_dotenv
 # Define color functions for printing
 def prGreen(skk): print(f"\033[92m{skk}\033[00m")
 def prRed(skk): print(f"\033[91m{skk}\033[00m")
@@ -169,13 +170,13 @@ def main():
                         help="Frequency of heartbeat messages in seconds (default: 4 seconds).")
     args = parser.parse_args()
 
-    CLIENT_ID = 'LFD1'
+    CLIENT_ID = os.getenv('LFDIP')
 
     LFD_IP = '0.0.0.0'  # LFD listens on all interfaces
     LFD_PORT = 54321  # LFD listens on this port
 
     # GFD_IP = '172.26.27.214'
-    GFD_IP = '172.26.119.200'
+    GFD_IP = os.getenv('GFDIP')
     GFD_PORT = 12345
 
     # Create an instance of LFD with the specified heartbeat frequency

@@ -171,7 +171,7 @@ def main():
                         help="Frequency of heartbeat messages in seconds (default: 4 seconds).")
     args = parser.parse_args()
 
-    CLIENT_ID = 'LFD1'
+    CLIENT_ID = os.getenv('LFDID')
 
     LFD_IP = '0.0.0.0'  # LFD listens on all interfaces
     LFD_PORT = 54321  # LFD listens on this port
