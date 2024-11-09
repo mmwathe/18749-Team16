@@ -2,7 +2,8 @@ import socket
 import json
 import time
 import threading
-
+import os
+from dotenv import load_dotenv
 # Define color functions for printing
 def prGreen(skk): print(f"\033[92m{skk}\033[00m")         # Green
 def prRed(skk): print(f"\033[91m{skk}\033[00m")           # Red
@@ -11,7 +12,7 @@ def prLightPurple(skk): print(f"\033[94m{skk}\033[00m")    # Light Purple
 def prPurple(skk): print(f"\033[95m{skk}\033[00m")        # Purple
 def prCyan(skk): print(f"\033[96m{skk}\033[00m")          # Cyan
 
-LFD_IPS = ['172.26.77.220', '127.0.0.1', '172.26.105.167']
+LFD_IPS = [os.getenv('SERVER1'), os.getenv('SERVER2'), os.getenv('SERVER3')]
 
 class GFD:
     def __init__(self, host, port, heartbeat_interval=5):
