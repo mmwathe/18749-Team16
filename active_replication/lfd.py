@@ -2,170 +2,145 @@ import socket
 import time
 import json
 import argparse
-from message import Message
 import os
 from dotenv import load_dotenv
 
-# Define color functions for printing
-def prGreen(skk): print(f"\033[92m{skk}\033[00m")
-def prRed(skk): print(f"\033[91m{skk}\033[00m")
-def prYellow(skk): print(f"\033[93m{skk}\033[00m")
-def prLightPurple(skk): print(f"\033[94m{skk}\033[00m")
-def prPurple(skk): print(f"\033[95m{skk}\033[00m")
-def prCyan(skk): print(f"\033[96m{skk}\033[00m")
+# Define color functions for printing with enhanced formatting
+def printG(skk): print(f"\033[92m{skk}\033[00m")         # Green
+def printR(skk): print(f"\033[91m{skk}\033[00m")         # Red
+def printY(skk): print(f"\033[93m{skk}\033[00m")         # Yellow
+def printLP(skk): print(f"\033[94m{skk}\033[00m")        # Light Purple
+def printP(skk): print(f"\033[95m{skk}\033[00m")         # Purple
+def printC(skk): print(f"\033[96m{skk}\033[00m")         # Cyan
 
-class LFD:
-    def __init__(self, lfd_ip, lfd_port, gfd_ip, gfd_port, client_id, heartbeat_interval=2):
-        self.lfd_ip = lfd_ip
-        self.lfd_port = lfd_port
-        self.gfd_ip = gfd_ip
-        self.gfd_port = gfd_port
-        self.client_id = client_id
-        self.heartbeat_interval = heartbeat_interval
-        self.lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.lfd_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.lfd_socket.bind((self.lfd_ip, self.lfd_port))
-        self.lfd_socket.listen(1)  # Listen for one connection (the server)
-        self.gfd_socket = None
-        self.server_socket = None
-        self.server_connected = False
-        self.server_id = None  # To store server ID once received
+COMPONENT_ID = "LFD1"
+LFD_IP = '0.0.0.0'
+LFD_PORT = 54321
+GFD_IP = '172.26.66.176'
+GFD_PORT = 12345
+heartbeat_interval = 4
+gfd_socket = None
+server_socket = None
+server_connected = False
+server_id = None
 
-    def wait_for_server(self):
-        """Wait for the server to connect to the LFD in non-blocking mode."""
-        self.lfd_socket.settimeout(1.0)  # Set a timeout to prevent blocking
-        prYellow(f"LFD waiting for server to connect on {self.lfd_ip}:{self.lfd_port}...")
-        try:
-            self.server_socket, server_address = self.lfd_socket.accept()
-            prGreen(f"Server connected from {server_address}")
-            self.server_connected = True
-            self.server_id = f"{server_address}"  # Default to address until we get an actual server ID
-            # Notify GFD about the server connection
-            self.notify_gfd("add replica", {"server_id": "S3"})
-        except socket.timeout:
-            pass  # No server connected yet, continue the loop
-        except Exception as e:
-            prRed(f"Failed to accept server connection: {e}")
+def create_message(message_type, **kwargs):
+    """Creates a standard message with component_id and timestamp."""
+    message = {
+        "component_id": COMPONENT_ID,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+        "message": message_type
+    }
+    message.update(kwargs)
+    return message
 
-    def connect_to_gfd(self):
-        """Connect to the GFD and respond to heartbeats."""
-        try:
-            self.gfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.gfd_socket.connect((self.gfd_ip, self.gfd_port))
-            prGreen(f"Connected to GFD at {self.gfd_ip}:{self.gfd_port}")
-            return True
-        except Exception as e:
-            prRed(f"Failed to connect to GFD: {e}")
-            return False
+def wait_for_server():
+    """Waits for a server connection and sends a registration message to GFD."""
+    global server_socket, server_connected, server_id
+    lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    lfd_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    lfd_socket.bind((LFD_IP, LFD_PORT))
+    lfd_socket.listen(1)
 
-    def notify_gfd(self, event_type, event_data):
-        """Notify the GFD of server-related events (connection or disconnection)."""
-        if not self.gfd_socket:
-            prRed("GFD is not connected. Cannot send notification.")
-            return
+    printY(f"LFD waiting for server connection on {LFD_IP}:{LFD_PORT}...")
+    try:
+        server_socket, server_address = lfd_socket.accept()
+        printG(f"Server connected from {server_address}")
+        server_connected = True
+        server_id = f"{server_address}"  # Default to address until we get an actual server ID
+        notify_gfd("add replica", {"server_id": "S1"})
+    except Exception as e:
+        printR(f"Failed to accept server connection: {e}")
 
-        message = {
-            "message": event_type,
-            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
-            "lfd_id": self.client_id,
-            "message_data": event_data
-        }
+def connect_to_gfd():
+    """Establishes a persistent connection to the GFD."""
+    global gfd_socket
+    try:
+        gfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        gfd_socket.connect((GFD_IP, GFD_PORT))
+        printG(f"Connected to GFD at {GFD_IP}:{GFD_PORT}")
+        return True
+    except Exception as e:
+        printR(f"Failed to connect to GFD: {e}")
+        return False
 
-        try:
-            self.gfd_socket.sendall(json.dumps(message).encode())
-            prCyan(f"Sent '{event_type}' notification to GFD: {message}")
-        except socket.error as e:
-            prRed(f"Failed to send notification to GFD. Error: {e}")
+def notify_gfd(event_type, event_data):
+    """Sends a notification message to GFD with event details."""
+    global gfd_socket
+    if not gfd_socket:
+        printR("GFD is not connected. Cannot send notification.")
+        return
 
-    def send_heartbeat_to_server(self):
-        """Send a heartbeat to the server."""
-        message = Message(self.client_id, "heartbeat")
-        message_json = json.dumps({
-            "timestamp": message.timestamp,
-            "client_id": message.client_id,
-            "message": message.message,
-            "message_id": message.message_id
-        })
+    message = create_message(event_type, message_data=event_data)
+    try:
+        gfd_socket.sendall(json.dumps(message).encode())
+        printC(f"Sent '{event_type}' notification to GFD: {message}")
+    except socket.error as e:
+        printR(f"Failed to send notification to GFD: {e}")
 
-        try:
-            prYellow(f"Sending heartbeat to server: {message}")
-            self.server_socket.sendall(message_json.encode())
-        except socket.error as e:
-            prRed(f"Failed to send heartbeat to server. Error: {e}. Retrying...")
-            time.sleep(self.heartbeat_interval)
+def send_heartbeat_to_server():
+    """Sends heartbeat messages to the server at regular intervals."""
+    global server_socket
+    message = create_message("heartbeat")
+    try:
+        printY(f"Sending heartbeat to server: {message}")
+        server_socket.sendall(json.dumps(message).encode())
+    except socket.error as e:
+        printR(f"Failed to send heartbeat to server: {e}")
 
-    def receive_response_from_server(self):
-        """Receive a response from the server."""
-        try:
-            response = self.server_socket.recv(1024).decode()
-            response_data = json.loads(response)
-            server_id = response_data.get('server_id', 'Unknown')
-            timestamp = response_data.get('timestamp', 'Unknown')
-            message = response_data.get('message', 'Unknown')
-            state = response_data.get('state', 'Unknown')
+def receive_heartbeat_from_gfd():
+    """Receives heartbeat messages from the GFD and sends acknowledgment."""
+    global gfd_socket
+    try:
+        data = gfd_socket.recv(1024).decode()
+        message = json.loads(data)
+        if message.get('message') == 'heartbeat':
+            printC(f"Received heartbeat from GFD: {message}")
+            acknowledgment = create_message("heartbeat acknowledgment")
+            gfd_socket.sendall(json.dumps(acknowledgment).encode())
+            printG("Sent heartbeat acknowledgment to GFD.")
+    except (socket.error, json.JSONDecodeError) as e:
+        printR(f"Failed to receive or respond to heartbeat from GFD: {e}")
 
-            # Update the server_id if available
-            if server_id != 'Unknown':
-                self.server_id = server_id
+def monitor_server():
+    """Monitors the server connection, sends heartbeats, and receives responses."""
+    global server_connected, server_socket
+    if server_connected:
+        send_heartbeat_to_server()
+        response = receive_response_from_server()
 
-            prPurple("=" * 80)
-            prYellow(f"{timestamp:<20} {server_id} -> {self.client_id}")
-            prLightPurple(f"{'':<20} {'Message:':<15} {message}")
-            prLightPurple(f"{'':<20} {'State:':<15} {state}")
+        if response is None:
+            printR("Server did not respond to the heartbeat.")
+            notify_gfd("remove replica", {"server_id": server_id})
+            server_socket.close()
+            server_connected = False
+    else:
+        wait_for_server()
 
-            return response
-        except (socket.error, json.JSONDecodeError):
-            prRed("No response received from server. Server might be down.")
-            return None
+def receive_response_from_server():
+    """Receives and processes the server's response to heartbeat messages."""
+    global server_socket, server_id
+    try:
+        response = server_socket.recv(1024).decode()
+        response_data = json.loads(response)
+        server_id = response_data.get('server_id', server_id)
+        timestamp = response_data.get('timestamp', "Unknown")
+        message = response_data.get('message', "Unknown")
+        state = response_data.get('state', "Unknown")
 
-    def receive_heartbeat_from_gfd(self):
-        """Receive a heartbeat from the GFD and send a response."""
-        try:
-            data = self.gfd_socket.recv(1024).decode()
-            message = json.loads(data)
-            if message.get('message', '') == 'heartbeat':
-                prCyan(f"Received heartbeat from GFD: {message}")
-                response = {
-                    "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
-                    "client_id": self.client_id,
-                    "message": "heartbeat acknowledgment"
-                }
-                self.gfd_socket.sendall(json.dumps(response).encode())
-                prGreen("Sent heartbeat acknowledgment to GFD.")
-        except (socket.error, json.JSONDecodeError):
-            prRed("Failed to receive or respond to heartbeat from GFD.")
+        printP("=" * 80)
+        printY(f"{timestamp:<20} {server_id} -> {COMPONENT_ID}")
+        printLP(f"{'':<20} {'Message:':<15} {message}")
+        printLP(f"{'':<20} {'State:':<15} {state}")
 
-    def monitor_server(self):
-        """Monitor the server by sending heartbeats."""
-        if self.server_connected:
-            self.send_heartbeat_to_server()
-            start_time = time.time()
-            response = self.receive_response_from_server()
-
-            if response is None:
-                prRed("Server did not respond to the heartbeat.")
-                # Notify GFD that the server has disconnected
-                self.notify_gfd("remove replica", {"server_id": self.server_id})
-                # If server does not respond, terminate connection and wait for reconnection
-                self.server_socket.close()
-                self.server_connected = False
-        else:
-            # If no server connected, wait for server
-            self.wait_for_server()
-
-    def close_connection(self):
-        if self.server_socket:
-            # Notify GFD that the server has disconnected
-            self.notify_gfd("remove replica", {"server_id": self.server_id, "reason": "LFD shutting down"})
-            self.server_socket.close()
-        if self.lfd_socket:
-            self.lfd_socket.close()
-        if self.gfd_socket:
-            self.gfd_socket.close()
-        prRed("LFD shutdown.")
+        return response
+    except (socket.error, json.JSONDecodeError):
+        printR("No response received from server. Server might be down.")
+        return None
 
 def main():
-    # Set up argument parser for the heartbeat frequency
+    global heartbeat_interval
+
     parser = argparse.ArgumentParser(description="Local Fault Detector (LFD) for monitoring server health.")
     parser.add_argument('--heartbeat_freq', type=int, default=4,
                         help="Frequency of heartbeat messages in seconds (default: 4 seconds).")
@@ -188,18 +163,23 @@ def main():
 
     try:
         while True:
-            # Monitor for heartbeats from the GFD
-            lfd.receive_heartbeat_from_gfd()
-
-            # Monitor heartbeats with the server (non-blocking wait for server)
-            lfd.monitor_server()
-
-            # Sleep briefly to avoid high CPU usage
-            time.sleep(0.5)  # Adjust to match heartbeat frequency
+            receive_heartbeat_from_gfd()
+            monitor_server()
+            time.sleep(0.5)  # Prevents high CPU usage
     except KeyboardInterrupt:
-        prYellow("LFD interrupted by user.")
+        printY("LFD interrupted by user.")
     finally:
-        lfd.close_connection()
+        close_connections()
+
+def close_connections():
+    """Closes all active connections and shuts down the LFD."""
+    global server_socket, gfd_socket
+    if server_socket:
+        notify_gfd("remove replica", {"server_id": server_id, "reason": "LFD shutting down"})
+        server_socket.close()
+    if gfd_socket:
+        gfd_socket.close()
+    printR("LFD shutdown.")
 
 if __name__ == '__main__':
     main()
