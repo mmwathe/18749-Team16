@@ -2,8 +2,6 @@ import socket
 import time
 import json
 import argparse
-import os
-from dotenv import load_dotenv
 
 # Define color functions for printing with enhanced formatting
 def printG(skk): print(f"\033[92m{skk}\033[00m")         # Green
@@ -145,20 +143,9 @@ def main():
     parser.add_argument('--heartbeat_freq', type=int, default=4,
                         help="Frequency of heartbeat messages in seconds (default: 4 seconds).")
     args = parser.parse_args()
+    heartbeat_interval = args.heartbeat_freq
 
-    CLIENT_ID = os.getenv('LFDID')
-
-    LFD_IP = '0.0.0.0'  # LFD listens on all interfaces
-    LFD_PORT = 54321  # LFD listens on this port
-
-    GFD_IP = os.getenv('GFDIP')
-    GFD_PORT = 12345
-
-    # Create an instance of LFD with the specified heartbeat frequency
-    lfd = LFD(LFD_IP, LFD_PORT, GFD_IP, GFD_PORT, CLIENT_ID, heartbeat_interval=args.heartbeat_freq)
-
-    # Connect to the GFD
-    if not lfd.connect_to_gfd():
+    if not connect_to_gfd():
         return
 
     try:
