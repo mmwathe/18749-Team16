@@ -2,6 +2,7 @@ import socket
 import time
 import json
 import argparse
+import os
 
 # Define color functions for printing with enhanced formatting
 def printG(skk): print(f"\033[92m{skk}\033[00m")         # Green
@@ -11,10 +12,10 @@ def printLP(skk): print(f"\033[94m{skk}\033[00m")        # Light Purple
 def printP(skk): print(f"\033[95m{skk}\033[00m")         # Purple
 def printC(skk): print(f"\033[96m{skk}\033[00m")         # Cyan
 
-COMPONENT_ID = "LFD1"
+COMPONENT_ID = "LFD2"
 LFD_IP = '0.0.0.0'
 LFD_PORT = 54321
-GFD_IP = '172.26.66.176'
+GFD_IP = '172.26.104.60'
 GFD_PORT = 12345
 heartbeat_interval = 4
 gfd_socket = None
@@ -36,6 +37,7 @@ def wait_for_server():
     """Waits for a server connection and sends a registration message to GFD."""
     global server_socket, server_connected, server_id
     lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    lfd_socket.setblocking(False)
     lfd_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     lfd_socket.bind((LFD_IP, LFD_PORT))
     lfd_socket.listen(1)
@@ -46,7 +48,7 @@ def wait_for_server():
         printG(f"Server connected from {server_address}")
         server_connected = True
         server_id = f"{server_address}"  # Default to address until we get an actual server ID
-        notify_gfd("add replica", {"server_id": "S1"})
+        notify_gfd("add replica", {"server_id": os.getenv('SERVERID')})
     except Exception as e:
         printR(f"Failed to accept server connection: {e}")
 
@@ -109,7 +111,7 @@ def monitor_server():
 
         if response is None:
             printR("Server did not respond to the heartbeat.")
-            notify_gfd("remove replica", {"server_id": server_id})
+            notify_gfd("remove replica", {"server_id": os.getenv('SERVERID')})
             server_socket.close()
             server_connected = False
     else:
