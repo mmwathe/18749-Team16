@@ -1,6 +1,7 @@
 import socket
 import json
 import time
+import errno
 from queue import Queue, Empty
 
 # Define color functions for printing
@@ -103,8 +104,8 @@ class PrimaryServer:
                 replica.sendall(checkpoint_message.encode())
             except socket.error as e:
                 prRed(f"Failed to send checkpoint to replica. Error: {e}")
-                replica.close()
-                self.replicas.remove(replica)  # Remove failed replica
+                #replica.close()
+                #self.replicas.remove(replica)  # Remove failed replica
 
     def receive_ack_from_replicas(self):
         """Receive acknowledgment from replicas after sending a checkpoint."""
@@ -115,8 +116,8 @@ class PrimaryServer:
                 prCyan(f"Received acknowledgment from replica: {response_data}")
             except (socket.error, json.JSONDecodeError):
                 prRed("Failed to receive acknowledgment from a replica.")
-                #replica.close()
-                #self.replicas.remove(replica)
+                replica.close()
+                self.replicas.remove(replica)
 
     def receive_messages_from_clients(self):
         """Receive messages from all connected clients."""
