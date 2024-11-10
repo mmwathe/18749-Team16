@@ -13,7 +13,7 @@ def prLightPurple(skk): print("\033[94m{}\033[00m".format(skk))
 def prPurple(skk): print("\033[95m{}\033[00m".format(skk))
 def prCyan(skk): print("\033[96m{}\033[00m".format(skk))
 
-SERVERS_IPS = [os.getenv(CLIENT_SERVER_PORT1), os.getenv(CLIENT_SERVER_PORT2), os.getenv(CLIENT_SERVER_PORT3)]
+SERVERS_IPS = [os.getenv('SERVER1'), os.getenv('SERVER2'), os.getenv('SERVER3')]
 # SERVERS_IPS = ['172.26.117.200']
 
 

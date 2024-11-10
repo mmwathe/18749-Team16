@@ -2,8 +2,7 @@ import socket
 import json
 import time
 from queue import Queue, Empty
-import os
-from dotenv import load_dotenv
+
 # Define color functions for printing
 def prGreen(skk): print("\033[92m{}\033[00m".format(skk))
 def prRed(skk): print("\033[91m{}\033[00m".format(skk))
@@ -51,7 +50,7 @@ class PrimaryServer:
         try:
             conn, addr = self.server_socket.accept()
             conn.setblocking(False)
-            if len(self.replicas) < self.replica_count:
+            if len(self.replicas) < (self.replica_count - 1):
                 # Treat the connection as a replica if we're still expecting replicas
                 self.replicas.append(conn)
                 prGreen(f"Connected to replica from {addr}")
@@ -116,8 +115,8 @@ class PrimaryServer:
                 prCyan(f"Received acknowledgment from replica: {response_data}")
             except (socket.error, json.JSONDecodeError):
                 prRed("Failed to receive acknowledgment from a replica.")
-                replica.close()
-                self.replicas.remove(replica)
+                #replica.close()
+                #self.replicas.remove(replica)
 
     def receive_messages_from_clients(self):
         """Receive messages from all connected clients."""
@@ -192,7 +191,7 @@ class PrimaryServer:
             self.accept_connections_in_order()
 
             # Send checkpoints to replicas at regular intervals
-            if len(self.replicas) >= self.replica_count and (time.time() - self.last_checkpoint_time >= self.checkpoint_interval):
+            if len(self.replicas)  >= (self.replica_count - 1) and (time.time() - self.last_checkpoint_time >= self.checkpoint_interval):
                 self.checkpoint_count += 1
                 self.send_checkpoint_to_replicas()
                 self.receive_ack_from_replicas()

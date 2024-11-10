@@ -162,7 +162,21 @@ class GFD:
             conn, addr = self.server_socket.accept()
             threading.Thread(target=self.handle_lfd_connection, args=(conn, addr), daemon=True).start()
 
+def get_local_ip():
+    try:
+        # Create a dummy connection to an external server (Google DNS)
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))  # Doesn't actually send data
+        local_ip = s.getsockname()[0]
+        s.close()
+        return local_ip
+    except Exception as e:
+        return f"Failed to get IP: {e}"
+
+
 def main():
+    # Print the local IP address
+    print("Local IP address:", get_local_ip())
     GFD_IP = '0.0.0.0'
     GFD_PORT = 12345
     gfd = GFD(GFD_IP, GFD_PORT, heartbeat_interval=5)

@@ -1,7 +1,8 @@
 import socket
 import json
 import time
-
+import os
+from dotenv import load_dotenv
 # Define color functions for printing
 def prGreen(skk): print("\033[92m{}\033[00m".format(skk))
 def prRed(skk): print("\033[91m{}\033[00m".format(skk))
@@ -129,7 +130,7 @@ class ReplicaServer:
 def main():
     SERVER_IP = '0.0.0.0'
     SERVER_PORT = 12346  # Unique port for replica
-    PRIMARY_IP = '172.26.36.98'  # Primary server's IP
+    PRIMARY_IP = os.getenv('PRIMARYIP') # Primary server's IP
     PRIMARY_PORT = 43210  # Primary server port
     LFD_IP = '0.0.0.0'  # LFD IP address
     LFD_PORT = 54321
