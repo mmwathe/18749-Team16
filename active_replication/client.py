@@ -1,94 +1,92 @@
 import socket
 import json
-from message import Message
+import time
 from collections import defaultdict
-import os
-from dotenv import load_dotenv
 
 # Define color functions for printing
-def prGreen(skk): print("\033[92m{}\033[00m".format(skk))
-def prRed(skk): print("\033[91m{}\033[00m".format(skk))
-def prYellow(skk): print("\033[93m{}\033[00m".format(skk))
-def prLightPurple(skk): print("\033[94m{}\033[00m".format(skk))
-def prPurple(skk): print("\033[95m{}\033[00m".format(skk))
-def prCyan(skk): print("\033[96m{}\033[00m".format(skk))
+def print_sent(skk): print("\033[96m{}\033[00m".format(skk))  # Cyan for sent messages
+def print_received(skk): print("\033[95m{}\033[00m".format(skk))  # Purple for received messages
+def printR(skk): print("\033[91m{}\033[00m".format(skk))  # Red for errors
+def printY(skk): print("\033[93m{}\033[00m".format(skk))  # Yellow for warnings
+def printG(skk): print("\033[92m{}\033[00m".format(skk))  # Green for registrations
 
-SERVERS_IPS = [os.getenv('SERVER1'), os.getenv('SERVER2'), os.getenv('SERVER3')]
-# SERVERS_IPS = ['172.26.117.200']
-
+# List of server IPs
+SERVER_IPS = ['127.0.0.1', '127.0.0.2', '127.0.0.3']  # Replace with actual server IPs
 
 class Client:
     def __init__(self, server_port, client_id):
-        self.server_port = server_port  # Client specifies the port
+        self.server_ips = SERVER_IPS
+        self.server_port = server_port
         self.client_id = client_id
-        self.sockets = []
+        self.sockets = {}
         self.request_number = 0
         self.server_responses = defaultdict(list)
-        
-        for ip in SERVERS_IPS:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.sockets.append((ip, sock))
 
-    def getServerIDfromIP(self):
-        return {ip: f"{index+1}" for index, ip in enumerate(SERVERS_IPS)}
+    def create_message(self, message_type, **kwargs):
+        """Creates a standard message with client_id and timestamp."""
+        return {
+            "client_id": self.client_id,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            "message": message_type,
+            **kwargs
+        }
+
+    def format_message_log(self, message, sender, receiver, sent=True):
+        """Formats the message log for structured printing."""
+        message_type = message.get("message", "Unknown")
+        timestamp = message.get("timestamp", "Unknown")
+        details = {k: v for k, v in message.items() if k not in ["client_id", "timestamp", "message"]}
+        color_fn = print_sent if sent else print_received
+        color_fn("====================================================================")
+        color_fn(f"{sender} → {receiver} ({message_type}) at {timestamp}")
+        if details:
+            for key, value in details.items():
+                color_fn(f"  {key}: {value}")
+        color_fn("====================================================================")
+
+    def send_message(self, sock, message, receiver):
+        """Sends a message through the provided socket."""
+        try:
+            sock.sendall(json.dumps(message).encode())
+            self.format_message_log(message, self.client_id, receiver, sent=True)
+        except socket.error as e:
+            printR(f"Failed to send message to {receiver}: {e}")
+
+    def receive_message(self, sock, sender):
+        """Receives a message from the provided socket."""
+        try:
+            data = sock.recv(1024).decode()
+            message = json.loads(data)
+            self.format_message_log(message, sender, self.client_id, sent=False)
+            return message
+        except (socket.error, json.JSONDecodeError) as e:
+            printR(f"Failed to receive or decode message from {sender}: {e}")
+            return None
 
     def connect(self):
-        for ip, sock in self.sockets:
+        """Establish connections to all servers."""
+        for ip in self.server_ips:
             try:
-                sock.connect((ip, self.server_port))  # Use client-specified port for all servers
-                print(f"Connected to server at {ip}:{self.server_port}")
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.connect((ip, self.server_port))
+                self.sockets[ip] = sock
+                printG(f"Connected to server at {ip}:{self.server_port}")
             except Exception as e:
-                print(f"Failed to connect to server {ip}: {e}")
+                printR(f"Failed to connect to server {ip}: {e}")
 
-    def send_message(self, message_content):
-        message = Message(self.client_id, message_content)
-        message_json = json.dumps({
-            "timestamp": message.timestamp,
-            "client_id": message.client_id,
-            "message": message.message,
-            "message_id": message.message_id,
-            "request_number": self.request_number
-        })
-        
-        for ip, sock in self.sockets:
-            try:
-                prPurple("=" * 80)
-                prYellow(f"{message.timestamp:<20} C{self.client_id} -> S{self.getServerIDfromIP()[ip]}")
-                prLightPurple(f"{'':<20} {'Message:':<15} {message.message}")
-                prGreen(f"{'':<20} {'Request number:':<15} {self.request_number}")
-                self.request_number += 1
-                sock.sendall(message_json.encode())
-            except Exception as e:
-                prRed(f"Failed to send message to server {ip}: {e}")
+    def send_to_all_servers(self, message_content):
+        """Send a message to all connected servers."""
+        message = self.create_message(message_content)
+        for ip, sock in self.sockets.items():
+            self.send_message(sock, message, f"Server@{ip}")
 
-    def receive_response(self):
-        for ip, sock in self.sockets:
-            try:
-                response = sock.recv(1024).decode()
-                if response: 
-                    message = json.loads(response)
-                    server_id = message.get("server_id", "Unknown")
-                    timestamp = message.get('timestamp', 'Unknown')
-                    content = message.get('message', 'Unknown')
-                    request_number = message.get("request_number", "Unknown")
-                    state_before = message.get("state_before", "Unknown")
-                    state_after = message.get("state_after", "Unknown")
-
-                    prPurple("=" * 80)
-                    prYellow(f"{timestamp:<20} {server_id} -> C{self.client_id}")
-
-                    if request_number not in self.server_responses:
-                        prLightPurple(f"{'':<20} {'Message:':<15} {content}")
-                        prLightPurple(f"{'':<20} {'State updated:':<15} {state_before} -> {state_after}")
-                        prGreen(f"{'':<20} {'Request number:':<15} {request_number}")
-                    else:
-                        prRed(f"request_num {request_number}: Discarded duplicate reply from {server_id}")
-                    self.server_responses[request_number].append(response)
-
-            except Exception as e:
-                print(f"Failed to receive response from server {ip}: {e}")
+    def receive_from_all_servers(self):
+        """Receive responses from all servers."""
+        for ip, sock in self.sockets.items():
+            self.receive_message(sock, f"Server@{ip}")
 
     def close_connections(self):
-        for ip, sock in self.sockets:
+        """Close all connections."""
+        for ip, sock in self.sockets.items():
             sock.close()
-            print(f"Connection to server {ip} closed.")
+            printY(f"Connection to server {ip} closed.")
