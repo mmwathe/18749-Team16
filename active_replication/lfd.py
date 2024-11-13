@@ -12,10 +12,10 @@ def printLP(skk): print(f"\033[94m{skk}\033[00m")        # Light Purple
 def printP(skk): print(f"\033[95m{skk}\033[00m")         # Purple
 def printC(skk): print(f"\033[96m{skk}\033[00m")         # Cyan
 
-COMPONENT_ID = "LFD1"
+COMPONENT_ID = "LFD3"
 LFD_IP = '0.0.0.0'
 LFD_PORT = 54321
-GFD_IP = '172.26.104.60'
+GFD_IP = '127.0.0.1'
 GFD_PORT = 12345
 heartbeat_interval = 4
 gfd_socket = None

@@ -2,211 +2,167 @@ import socket
 import json
 import time
 from queue import Queue, Empty
-import os
-from dotenv import load_dotenv
 
-# Define color functions for printing
-def prGreen(skk): print("\033[92m{}\033[00m".format(skk))
-def prRed(skk): print("\033[91m{}\033[00m".format(skk))
-def prYellow(skk): print("\033[93m{}\033[00m".format(skk))
-def prLightPurple(skk): print("\033[94m{}\033[00m".format(skk))
-def prPurple(skk): print("\033[95m{}\033[00m".format(skk))
-def prCyan(skk): print("\033[96m{}\033[00m".format(skk))
+# Define color functions for printing with enhanced formatting
+def printG(skk): print(f"\033[92m{skk}\033[00m")         # Green
+def printR(skk): print(f"\033[91m{skk}\033[00m")         # Red
+def printY(skk): print(f"\033[93m{skk}\033[00m")         # Yellow
+def printLP(skk): print(f"\033[94m{skk}\033[00m")        # Light Purple
+def printP(skk): print(f"\033[95m{skk}\033[00m")         # Purple
+def printC(skk): print(f"\033[96m{skk}\033[00m")         # Cyan
 
-class Server:
-    def __init__(self, server_ip, server_port, server_id, lfd_ip, lfd_port):
-        self.server_ip = server_ip
-        self.server_port = server_port
-        self.server_id = server_id
-        self.lfd_ip = lfd_ip
-        self.lfd_port = lfd_port
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.setblocking(False)  # Non-blocking mode
-        self.message_queue = Queue()
-        self.clients = {}
-        self.state = 0  # Initial state
-        self.lfd_socket = None
+COMPONENT_ID = "S1"
+SERVER_IP = '0.0.0.0'
+SERVER_PORT = 12345
+LFD_IP = '127.0.0.1'
+LFD_PORT = 54321
+state = 0
+server_socket = None
+lfd_socket = None
+clients = {}
+message_queue = Queue()
 
-    def start(self):
+def create_message(message_type, **kwargs):
+    """Creates a standard message with component_id and timestamp."""
+    message = {
+        "component_id": COMPONENT_ID,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+        "message": message_type
+    }
+    message.update(kwargs)
+    return message
+
+def start_server():
+    global server_socket
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind((SERVER_IP, SERVER_PORT))
+    server_socket.listen(3)
+    printG(f"Server listening on {SERVER_IP}:{SERVER_PORT}")
+    connect_to_lfd()
+
+def connect_to_lfd():
+    global lfd_socket
+    try:
+        lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        lfd_socket.connect((LFD_IP, LFD_PORT))
+        printG(f"Connected to LFD at {LFD_IP}:{LFD_PORT}")
+    except Exception as e:
+        printR(f"Failed to connect to LFD: {e}")
+        lfd_socket = None
+
+def accept_new_connection():
+    global server_socket, clients
+    try:
+        client_socket, client_address = server_socket.accept()
+        client_socket.setblocking(False)
+        clients[client_socket] = client_address
+        printC(f"New connection established with {client_address}")
+    except BlockingIOError:
+        pass
+
+def receive_messages():
+    global clients, message_queue
+    for client_socket in list(clients):
         try:
-            self.server_socket.bind((self.server_ip, self.server_port))
-            self.server_socket.listen(3)  # Listen for up to 3 simultaneous connections
-            prGreen(f"Server listening on {self.server_ip}:{self.server_port}")
-            self.connect_to_lfd()  # Try to connect to LFD on start
-        except Exception as e:
-            prRed(f"Failed to start server: {e}")
-            return False
-        return True
-
-    def connect_to_lfd(self):
-        try:
-            self.lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.lfd_socket.connect((self.lfd_ip, self.lfd_port))
-            prGreen(f"Connected to LFD at {self.lfd_ip}:{self.lfd_port}")
-        except Exception as e:
-            prRed(f"Failed to connect to LFD: {e}")
-            self.lfd_socket = None
-
-    def receive_messages_from_lfd(self):
-        if self.lfd_socket:
-            try:
-                response = self.lfd_socket.recv(1024).decode()
-                if response:
-                    message = json.loads(response)
-                    prCyan(f"Received message from LFD: {message}")
-                    timestamp = message.get('timestamp', 'Unknown')
-                    content = message.get('message', 'Unknown')
-                    prYellow(f"LFD -> Server: {content} at {timestamp}")
-
-                    # Process heartbeat or other messages here
-                    if content.lower() == 'heartbeat':
-                        prGreen("Heartbeat received from LFD.")
-                        # Optionally, send an acknowledgment back
-                        response = {
-                            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
-                            "server_id": self.server_id,
-                            "message": "heartbeat acknowledgment"
-                        }
-                        self.lfd_socket.sendall(json.dumps(response).encode())
-                        prGreen("Sent heartbeat acknowledgment to LFD.")
-
-            except (socket.error, json.JSONDecodeError):
-                prRed("Failed to receive or parse message from LFD.")
-
-    def accept_new_connection(self):
-        try:
-            client_socket, client_address = self.server_socket.accept()
-            client_socket.setblocking(False)  # Non-blocking mode for client
-            self.clients[client_socket] = client_address
-            prCyan(f"New connection established with {client_address}")
-        except BlockingIOError:
-            # No new connections, continue
-            pass
-
-    def receive_messages(self):
-        for client_socket in list(self.clients):
-            try:
-                data = client_socket.recv(1024).decode()
-                if data:
-                    self.message_queue.put((client_socket, data))
-                else:
-                    self.disconnect_client(client_socket)
-            except BlockingIOError:
-                # No data to receive, continue
-                pass
-
-    def process_messages(self):
-        try:
-            while True:
-                client_socket, data = self.message_queue.get_nowait()
-                self.process_message(client_socket, data)
-        except Empty:
-            # No messages to process, continue
-            pass
-
-    def process_message(self, client_socket, data):
-        try:
-            # Attempt to parse the data as JSON
-            message = json.loads(data)
-            timestamp = message.get('timestamp', 'Unknown')
-            client_id = message.get('client_id', 'Unknown')
-            content = message.get('message', 'Unknown')
-            message_id = message.get('message_id', 'Unknown')
-            request_number = message.get("request_number", "Unknown")
-
-            prPurple("=" * 80)
-
-            if content.lower() == 'heartbeat':
-                prRed(f"{timestamp:<20} {'Received heartbeat from:':<20} {client_id}")
-                prRed(f"{'':<20} {'Sending heartbeat...'}")
-                response = {
-                    "message": "heartbeat response",
-                    "server_id": self.server_id,
-                    "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
-                    "state": self.state
-                }
-
+            data = client_socket.recv(1024).decode()
+            if data:
+                message_queue.put((client_socket, data))
             else:
-                prYellow(f"{timestamp:<20} C{client_id} -> {self.server_id}")
-                prLightPurple(f"{'':<20} {'Message ID:':<15} {message_id}")
-                prLightPurple(f"{'':<20} {'Message:':<15} {content}")
-                prLightPurple(f"{'':<20} {'Request Number:':<15} {request_number}")
+                disconnect_client(client_socket)
+        except BlockingIOError:
+            pass
 
-                # Handle the message content and update state if necessary
-                state_before = self.state
-                response = {
-                    "message": "",
-                    "server_id": self.server_id,
-                    "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
-                    "state_before": state_before,
-                    "state_after": self.state,
-                    "request_number": request_number
-                }
+def process_messages():
+    global message_queue
+    try:
+        while True:
+            client_socket, data = message_queue.get_nowait()
+            process_message(client_socket, data)
+    except Empty:
+        pass
 
-                if content.lower() == 'ping':
-                    response["message"] = "pong"
-                    prGreen(f"{'':<20} Sending 'pong' response...")
-                elif content.lower() == 'update':
-                    self.state += 1
-                    response["message"] = "state updated"
-                    response["state_after"] = self.state
-                    prGreen(f"{'':<20} {'State updated:':<15} {state_before} -> {self.state}")
-                else:
-                    response["message"] = "unknown command"
-                    prRed(f"{'':<20} {'Received unknown message:':<15} {content}")
+def process_message(client_socket, data):
+    global state
+    try:
+        message = json.loads(data)
+        timestamp = message.get('timestamp', 'Unknown')
+        client_id = message.get('client_id', 'Unknown')
+        content = message.get('message', 'Unknown')
+        message_id = message.get('message_id', 'Unknown')
+
+        printP("=" * 80)
+        if content.lower() == 'heartbeat':
+            printR(f"{timestamp:<20} Received heartbeat from: {client_id}")
+            response = create_message("heartbeat response", server_id=COMPONENT_ID, state=state)
+            client_socket.sendall(json.dumps(response).encode())
+        else:
+            printY(f"{timestamp:<20} C{client_id} -> {COMPONENT_ID}")
+            printLP(f"{'':<20} {'Message ID:':<15} {message_id}")
+            printLP(f"{'':<20} {'Message:':<15} {content}")
+
+            response = create_message("", server_id=COMPONENT_ID)
+            if content.lower() == 'ping':
+                response["message"] = "pong"
+                printG(f"{'':<20} Sending 'pong' response...")
+            elif content.lower() == 'update':
+                state += 1
+                response["message"] = "state updated"
+                response["state_after"] = state
+                printG(f"{'':<20} State updated to: {state}")
+            else:
+                response["message"] = "unknown command"
+                printR(f"{'':<20} Received unknown message: {content}")
 
             client_socket.sendall(json.dumps(response).encode())
-        except json.JSONDecodeError:
-            prRed(f"{'':<20} Received malformed message: {data}")
+    except json.JSONDecodeError:
+        printR("Received malformed message.")
 
-    def disconnect_client(self, client_socket):
-        client_address = self.clients.get(client_socket, 'Unknown client')
-        prRed(f"Client {client_address} disconnected.")
-        client_socket.close()
-        del self.clients[client_socket]
+def receive_messages_from_lfd():
+    global lfd_socket
+    if lfd_socket:
+        try:
+            data = lfd_socket.recv(1024).decode()
+            if data:
+                message = json.loads(data)
+                printC(f"Received message from LFD: {message}")
+                if message.get("message") == "heartbeat":
+                    printG("Heartbeat received from LFD.")
+                    acknowledgment = create_message("heartbeat acknowledgment")
+                    lfd_socket.sendall(json.dumps(acknowledgment).encode())
+        except (socket.error, json.JSONDecodeError):
+            printR("Failed to receive or parse message from LFD.")
 
-    def close_server(self):
-        for client_socket in list(self.clients):
-            self.disconnect_client(client_socket)
-        self.server_socket.close()
-        if self.lfd_socket:
-            self.lfd_socket.close()
-        prRed("Server shutdown.")
+def disconnect_client(client_socket):
+    global clients
+    client_address = clients.get(client_socket, 'Unknown client')
+    printR(f"Client {client_address} disconnected.")
+    client_socket.close()
+    del clients[client_socket]
+
+def close_server():
+    global server_socket, lfd_socket, clients
+    for client_socket in list(clients):
+        disconnect_client(client_socket)
+    if server_socket:
+        server_socket.close()
+    if lfd_socket:
+        lfd_socket.close()
+    printR("Server shutdown.")
 
 def main():
-    SERVER_IP = '0.0.0.0'
-    SERVER_PORT = 12345
-    SERVER_ID = os.getenv('SERVERID')
-    LFD_IP = '0.0.0.0'  # Replace with LFD IP (same machine, hence localhost)
-    LFD_PORT = 54321  # Replace with LFD listening port
-
-    server = Server(SERVER_IP, SERVER_PORT, SERVER_ID, LFD_IP, LFD_PORT)
-
-    if not server.start():
-        return
-
-    prCyan(f"Server ID: {SERVER_ID}")
+    start_server()
 
     try:
         while True:
-            # Accept new connections
-            server.accept_new_connection()
-            
-            # Receive messages from clients
-            server.receive_messages()
-            
-            # Process all messages in the queue
-            server.process_messages()
-
-            # Receive messages from LFD
-            server.receive_messages_from_lfd()
-
-            # Sleep briefly to avoid high CPU usage
-            time.sleep(2)  # Adjust the sleep time to avoid excessive CPU usage
+            accept_new_connection()
+            receive_messages()
+            process_messages()
+            receive_messages_from_lfd()
+            time.sleep(2)  # Adjust as needed
     except KeyboardInterrupt:
-        prYellow("Server is shutting down...")
+        printY("Server is shutting down...")
     finally:
-        server.close_server()
+        close_server()
 
 if __name__ == '__main__':
     main()

@@ -1,12 +1,12 @@
 import socket
 import json
 
-# Define color functions for printing with enhanced formatting
 def printG(skk): print(f"\033[92m{skk}\033[00m")         # Green
-def printR(skk): print(f"\033[91m{skk}\033[00m")           # Red
-def printY(skk): print(f"\033[93m{skk}\033[00m")        # Yellow
-def printP(skk): print(f"\033[95m{skk}\033[00m")        # Purple
-def printC(skk): print(f"\033[96m{skk}\033[00m")          # Cyan
+def printR(skk): print(f"\033[91m{skk}\033[00m")         # Red
+def printY(skk): print(f"\033[93m{skk}\033[00m")         # Yellow
+def printLP(skk): print(f"\033[94m{skk}\033[00m")        # Light Purple
+def printP(skk): print(f"\033[95m{skk}\033[00m")         # Purple
+def printC(skk): print(f"\033[96m{skk}\033[00m")         # Cyan
 
 COMPONENT_ID = "RM"
 RM_IP = '127.0.0.1'

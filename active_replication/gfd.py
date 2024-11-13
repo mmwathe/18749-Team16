@@ -4,7 +4,7 @@ import time
 import threading
 import os
 from dotenv import load_dotenv
-# Define color functions for printing
+
 def printG(skk): print(f"\033[92m{skk}\033[00m")         # Green
 def printR(skk): print(f"\033[91m{skk}\033[00m")         # Red
 def printY(skk): print(f"\033[93m{skk}\033[00m")         # Yellow
@@ -13,15 +13,11 @@ def printP(skk): print(f"\033[95m{skk}\033[00m")         # Purple
 def printC(skk): print(f"\033[96m{skk}\033[00m")         # Cyan
 
 COMPONENT_ID = "GFD"
-LFD_IPS = ['172.26.66.176', '172.26.78.106']
 membership = {}
 member_count = 0
 lock = threading.Lock()
 rm_socket = None
-heartbeat_interval = 5
-
-def getLFDIDfromIP():
-    return {ip: f"LFD-{index+1}" for index, ip in enumerate(LFD_IPS)}    
+heartbeat_interval = 5   
 
 def create_message(message_type, **kwargs):
     """Creates a standard message with component_id and timestamp."""
@@ -46,24 +42,30 @@ def register_with_rm(rm_ip, rm_port):
         printR(f"Failed to register with RM: {e}")
 
 def handle_lfd_connection(conn, addr):
-    """Handles communication with an LFD, including heartbeats and membership updates."""
-    printC(f"Connected to {getLFDIDfromIP().get(addr[0], 'LFD')} at {addr}")
-    threading.Thread(target=send_heartbeat_continuously, args=(conn, addr), daemon=True).start()
-
     try:
+        # Receive the initial registration message from the LFD
+        data = conn.recv(1024).decode()
+        message = json.loads(data)
+
+        # Retrieve and print the component_id from the LFD's registration message
+        component_id = message.get("component_id", "Unknown")
+        printP(f"Received registration from {component_id} at {addr}")
+        threading.Thread(target=send_heartbeat_continuously, args=(conn, addr, component_id), daemon=True).start()
+
+        # Handle further messages from this LFD in a loop
         while True:
             data = conn.recv(1024).decode()
             if not data:
                 printR(f"LFD at {addr} disconnected.")
                 break
 
-            # Process incoming messages
+            # Process the incoming message from the LFD
             try:
                 message = json.loads(data)
-                if message.get("component_id") == "LFD":
-                    handle_lfd_message(message)
+                if "LFD" in message.get("component_id"):
+                    handle_lfd_message(component_id, message)
                 else:
-                    printY("Ignored message from unknown component")
+                    printY(f"Ignored message from unknown component: {message.get('component_id')}")
             except json.JSONDecodeError as e:
                 printR(f"Failed to decode message from LFD: {e}")
     except socket.error as e:
@@ -71,7 +73,7 @@ def handle_lfd_connection(conn, addr):
     finally:
         conn.close()
 
-def handle_lfd_message(message):
+def handle_lfd_message(component_id, message):
     """Processes messages from LFD for add/remove replicas or heartbeat acknowledgments."""
     action = message.get("message", "").lower()
     if action == "add replica":
@@ -87,17 +89,17 @@ def handle_lfd_message(message):
         else:
             printR("Remove replica message missing 'server_id'.")
     elif action == "heartbeat acknowledgment":   
-        printY(f"Heartbeat acknowledgment received from LFD")
+        printY(f"Heartbeat acknowledgment received from {component_id}")
     else:
         printLP(f"Unknown action '{action}' from LFD")
 
-def send_heartbeat_continuously(conn, addr):
+def send_heartbeat_continuously(conn, addr, component_id):
     """Sends heartbeat messages continuously to an LFD."""
     while True:
         try:
             message = create_message("heartbeat")
             conn.sendall(json.dumps(message).encode())
-            printC(f"Sent heartbeat to {getLFDIDfromIP().get(addr[0], 'LFD')}")
+            printC(f"Sent heartbeat to {component_id}")
             time.sleep(heartbeat_interval)
         except socket.error as e:
             printR(f"Failed to send heartbeat to LFD at {addr}: {e}")
