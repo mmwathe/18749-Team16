@@ -1,6 +1,7 @@
 import socket
 import json
 import time
+from select import select
 import threading
 
 # Define color functions for printing with enhanced formatting
@@ -79,49 +80,36 @@ def handle_heartbeat():
         if lfd_socket:
             message = receive_message(lfd_socket, "LFD")
             if message and message.get("message") == "heartbeat":
-                send_message(lfd_socket, create_message("heartbeat acknowledgment", state=state), "LFD")
+                send_message(lfd_socket, create_message("heartbeat acknowledgment"), "LFD")
         time.sleep(1)
 
-def start_client_listener():
-    """Starts listening for client connections."""
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_socket.bind((SERVER_IP, SERVER_PORT))
-    server_socket.listen(3)
-    print_registration(f"Server listening on {SERVER_IP}:{SERVER_PORT}")
+def start_client_listener(server_socket):
+    """Waits for and accepts new client connections."""
+    readable, _, _ = select([server_socket], [], [], 1)
+    for sock in readable:
+        client_socket, client_address = sock.accept()
+        print_registration(f"Client connected: {client_address}")
+        clients[client_socket] = client_address
 
-    while True:
-        try:
-            client_socket, client_address = server_socket.accept()
-            print_registration(f"Client connected: {client_address}")
-            clients[client_socket] = client_address
-            threading.Thread(target=handle_client_communication, args=(client_socket,), daemon=True).start()
-        except Exception as e:
-            print_disconnection(f"Error accepting client connection: {e}")
-
-def handle_client_communication(client_socket):
-    """Handles communication with a connected client."""
+def process_client_messages():
+    """Processes messages from connected clients."""
     global state
-    while True:
-        try:
-            message = receive_message(client_socket, "Client")
-            if not message:
-                disconnect_client(client_socket)
-                break
-
-            message_type = message.get("message", "unknown")
-            if message_type == "ping":
-                response = create_message("pong")
-            elif message_type == "update":
-                state += 1
-                response = create_message("state updated", state=state)
-            else:
-                response = create_message("unknown command")
-            send_message(client_socket, response, "Client")
-        except Exception as e:
-            print_disconnection(f"Error communicating with client: {e}")
+    readable, _, _ = select(list(clients.keys()), [], [], 1)
+    for client_socket in readable:
+        message = receive_message(client_socket, f"Client@{clients[client_socket]}")
+        if not message:
             disconnect_client(client_socket)
-            break
+            continue
+
+        message_type = message.get("message", "unknown")
+        if message_type == "ping":
+            response = create_message("pong")
+        elif message_type == "update":
+            state += 1
+            response = create_message("state updated", state=state)
+        else:
+            response = create_message("unknown command")
+        send_message(client_socket, response, f"Client@{clients[client_socket]}")
 
 def disconnect_client(client_socket):
     """Disconnects a client and removes it from the active clients list."""
@@ -132,14 +120,26 @@ def disconnect_client(client_socket):
 
 def main():
     """Main server function."""
+    global lfd_socket
+
+    # Start listening for client connections
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_socket.bind((SERVER_IP, SERVER_PORT))
+    server_socket.listen(5)
+    print_registration(f"Server listening on {SERVER_IP}:{SERVER_PORT}")
+
+    # Connect to the LFD
     connect_to_lfd()
 
-    threading.Thread(target=start_client_listener, daemon=True).start()
-    threading.Thread(target=handle_heartbeat, daemon=True).start()
+    # Start heartbeat thread
+    heartbeat_thread = threading.Thread(target=handle_heartbeat, daemon=True)
+    heartbeat_thread.start()
 
     try:
         while True:
-            time.sleep(1)  # Keep the main thread alive
+            start_client_listener(server_socket)
+            process_client_messages()
     except KeyboardInterrupt:
         print_warning("Server shutting down.")
     finally:
