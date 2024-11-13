@@ -12,7 +12,7 @@ def printLP(skk): print(f"\033[94m{skk}\033[00m")        # Light Purple
 def printP(skk): print(f"\033[95m{skk}\033[00m")         # Purple
 def printC(skk): print(f"\033[96m{skk}\033[00m")         # Cyan
 
-COMPONENT_ID = "LFD2"
+COMPONENT_ID = "LFD1"
 LFD_IP = '0.0.0.0'
 LFD_PORT = 54321
 GFD_IP = '172.26.104.60'
@@ -32,6 +32,16 @@ def create_message(message_type, **kwargs):
     }
     message.update(kwargs)
     return message
+
+def register_with_gfd():
+    """Registers LFD with GFD by sending an initial registration message."""
+    global gfd_socket
+    try:
+        registration_message = create_message("register")
+        gfd_socket.sendall(json.dumps(registration_message).encode())
+        printP(f"LFD registered with GFD: {COMPONENT_ID}")
+    except socket.error as e:
+        printR(f"Failed to register with GFD: {e}")
 
 def wait_for_server():
     """Waits for a server connection and sends a registration message to GFD."""
@@ -53,12 +63,13 @@ def wait_for_server():
         printR(f"Failed to accept server connection: {e}")
 
 def connect_to_gfd():
-    """Establishes a persistent connection to the GFD."""
+    """Establishes a persistent connection to the GFD and sends registration."""
     global gfd_socket
     try:
         gfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         gfd_socket.connect((GFD_IP, GFD_PORT))
         printG(f"Connected to GFD at {GFD_IP}:{GFD_PORT}")
+        register_with_gfd()  # Register upon connection
         return True
     except Exception as e:
         printR(f"Failed to connect to GFD: {e}")
