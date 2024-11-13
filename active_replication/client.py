@@ -66,13 +66,26 @@ class Client:
     def connect(self):
         """Establish connections to all servers."""
         for ip in self.server_ips:
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.connect((ip, self.server_port))
-                self.sockets[ip] = sock
-                printG(f"Connected to server at {ip}:{self.server_port}")
-            except Exception as e:
-                printR(f"Failed to connect to server {ip}: {e}")
+            self.attempt_connection(ip)
+
+    def attempt_connection(self, ip):
+        """Attempt to connect to a specific server IP."""
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.connect((ip, self.server_port))
+            self.sockets[ip] = sock
+            printG(f"Connected to server at {ip}:{self.server_port}")
+        except Exception as e:
+            printR(f"Failed to connect to server {ip}: {e}")
+            if ip in self.sockets:
+                self.sockets.pop(ip, None)
+
+    def reconnect(self):
+        """Attempt to reconnect to servers that are not connected."""
+        for ip in self.server_ips:
+            if ip not in self.sockets:
+                printY(f"Attempting to reconnect to server {ip}...")
+                self.attempt_connection(ip)
 
     def send_to_all_servers(self, message_content):
         """Send a message to all connected servers."""

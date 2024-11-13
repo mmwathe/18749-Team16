@@ -18,9 +18,13 @@ def main():
 
     try:
         while True:
+            # Attempt reconnections to servers if any are disconnected
+            client.reconnect()
+
             # Send an update message and process responses
             client.send_to_all_servers("update")
             client.receive_from_all_servers()
+
             time.sleep(2)  # Delay between requests
     except KeyboardInterrupt:
         printY("Client exiting...")

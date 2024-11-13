@@ -1,8 +1,8 @@
 import socket
 import json
 import time
-import threading
 from queue import Queue, Empty
+import threading
 
 # Define color functions for printing with enhanced formatting
 def print_registration(skk): print(f"\033[92m{skk}\033[00m")  # Green for registrations and accepted connections
@@ -56,12 +56,19 @@ def receive_message(sock, sender):
     """Receives a message from the provided socket."""
     try:
         data = sock.recv(1024).decode()
+        if not data:  # Socket closed by the client
+            print_disconnection(f"{sender} closed the connection.")
+            return None
         message = json.loads(data)
         format_message_log(message, sender, COMPONENT_ID, sent=False)
         return message
+    except BlockingIOError:
+        # No data available; socket temporarily unavailable
+        return None
     except (socket.error, json.JSONDecodeError) as e:
         print_disconnection(f"Failed to receive or decode message from {sender}: {e}")
         return None
+
 
 def connect_to_lfd():
     """Establishes a connection to the LFD and sends a registration message."""
@@ -84,49 +91,47 @@ def handle_heartbeat():
                 send_message(lfd_socket, create_message("heartbeat acknowledgment"), "LFD")
         time.sleep(1)
 
-def start_client_listener():
-    """Starts listening for client connections and adds their messages to the queue."""
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_socket.bind((SERVER_IP, SERVER_PORT))
-    server_socket.listen(5)
-    print_registration(f"Server listening on {SERVER_IP}:{SERVER_PORT}")
-
-    while True:
-        try:
-            client_socket, client_address = server_socket.accept()
-            print_registration(f"Client connected: {client_address}")
-            clients[client_socket] = client_address
-        except Exception as e:
-            print_disconnection(f"Error accepting client connection: {e}")
+def accept_new_connections(server_socket):
+    """Accepts new client connections if available and adds them to the clients dictionary."""
+    server_socket.setblocking(False)  # Set the socket to non-blocking mode
+    try:
+        client_socket, client_address = server_socket.accept()
+        print_registration(f"Client connected: {client_address}")
+        clients[client_socket] = client_address
+    except BlockingIOError:
+        # No new connections, move on
+        pass
+    except Exception as e:
+        print_disconnection(f"Error accepting client connection: {e}")
 
 def process_client_messages():
-    """Processes messages from connected clients and flushes the message queue."""
+    """Processes messages from connected clients and handles responses."""
     global state
-    while True:
+    for client_socket in list(clients.keys()):
         try:
-            for client_socket in list(clients.keys()):
-                message = receive_message(client_socket, f"Client@{clients[client_socket]}")
-                if not message:
-                    disconnect_client(client_socket)
-                    continue
+            client_socket.setblocking(False)  # Allow non-blocking mode for receiving
+            message = receive_message(client_socket, f"Client@{clients[client_socket]}")
+            if not message:  # If no message is received, skip further processing
+                continue
 
-                message_type = message.get("message", "unknown")
-                if message_type == "ping":
-                    response = create_message("pong")
-                elif message_type == "update":
-                    state += 1
-                    response = create_message("state updated", state=state)
-                else:
-                    response = create_message("unknown command")
+            message_type = message.get("message", "unknown")
+            if message_type == "ping":
+                response = create_message("pong")
+            elif message_type == "update":
+                state += 1
+                response = create_message("state updated", state=state)
+            else:
+                response = create_message("unknown command")
 
-                # Add the message and response to the queue
-                message_queue.put((client_socket, response))
+            # Add the response to the queue
+            message_queue.put((client_socket, response))
+        except BlockingIOError:
+            # No data available for now; skip processing this socket
+            continue
         except Exception as e:
-            print_disconnection(f"Error processing client messages: {e}")
+            print_disconnection(f"Error processing client message: {e}")
+            disconnect_client(client_socket)
 
-        # Flush the message queue
-        flush_message_queue()
 
 def flush_message_queue():
     """Sends all responses in the message queue."""
@@ -150,12 +155,21 @@ def main():
     """Main server function."""
     connect_to_lfd()
 
-    # Start client listener in the main loop
-    threading.Thread(target=start_client_listener, daemon=True).start()
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_socket.bind((SERVER_IP, SERVER_PORT))
+    server_socket.listen(5)
+    print_registration(f"Server listening on {SERVER_IP}:{SERVER_PORT}")
 
-    # Start processing client messages
+    # Start the heartbeat thread
+    threading.Thread(target=handle_heartbeat, daemon=True).start()
+
     try:
-        process_client_messages()
+        while True:
+            accept_new_connections(server_socket)  # Non-blocking, checks for connections
+            process_client_messages()  # Process any client messages
+            flush_message_queue()  # Send responses to clients
+            time.sleep(0.1)  # Prevent high CPU usage
     except KeyboardInterrupt:
         print_warning("Server shutting down.")
     finally:
@@ -163,6 +177,7 @@ def main():
             lfd_socket.close()
         for client in list(clients.keys()):
             disconnect_client(client)
+        server_socket.close()
         print_disconnection("Server terminated.")
 
 if __name__ == '__main__':
