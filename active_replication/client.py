@@ -44,15 +44,16 @@ class Client:
                 color_fn(f"  {key}: {value}")
         color_fn("====================================================================")
 
-    def send_message(self, sock, message, receiver):
+    def send_message(self, sock, message, receiver, ip):
         """Sends a message through the provided socket."""
         try:
             sock.sendall(json.dumps(message).encode())
             self.format_message_log(message, self.client_id, receiver, sent=True)
         except socket.error as e:
             printR(f"Failed to send message to {receiver}: {e}")
+            self.sockets.pop(ip, None)  # Remove socket on failure
 
-    def receive_message(self, sock, sender):
+    def receive_message(self, sock, sender, ip):
         """Receives a message from the provided socket."""
         try:
             data = sock.recv(1024).decode()
@@ -61,6 +62,7 @@ class Client:
             return message
         except (socket.error, json.JSONDecodeError) as e:
             printR(f"Failed to receive or decode message from {sender}: {e}")
+            self.sockets.pop(ip, None)  # Remove socket on failure
             return None
 
     def connect(self):
@@ -77,8 +79,6 @@ class Client:
             printG(f"Connected to server at {ip}:{self.server_port}")
         except Exception as e:
             printR(f"Failed to connect to server {ip}: {e}")
-            if ip in self.sockets:
-                self.sockets.pop(ip, None)
 
     def reconnect(self):
         """Attempt to reconnect to servers that are not connected."""
@@ -90,16 +90,16 @@ class Client:
     def send_to_all_servers(self, message_content):
         """Send a message to all connected servers."""
         message = self.create_message(message_content)
-        for ip, sock in self.sockets.items():
-            self.send_message(sock, message, f"Server@{ip}")
+        for ip, sock in list(self.sockets.items()):  # Use list to avoid runtime dict changes
+            self.send_message(sock, message, f"Server@{ip}", ip)
 
     def receive_from_all_servers(self):
         """Receive responses from all servers."""
-        for ip, sock in self.sockets.items():
-            self.receive_message(sock, f"Server@{ip}")
+        for ip, sock in list(self.sockets.items()):
+            self.receive_message(sock, f"Server@{ip}", ip)
 
     def close_connections(self):
         """Close all connections."""
-        for ip, sock in self.sockets.items():
+        for ip, sock in list(self.sockets.items()):
             sock.close()
             printY(f"Connection to server {ip} closed.")

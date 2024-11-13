@@ -17,6 +17,10 @@ SERVER_IP = '0.0.0.0'
 SERVER_PORT = 12346
 LFD_IP = '127.0.0.1'
 LFD_PORT = 54321
+
+RELIABLE_SERVER_IP = '172.26.12.147'
+RELIABLE_SERVER_PORT = 12347
+
 state = 0
 lfd_socket = None
 clients = {}
@@ -62,13 +66,9 @@ def receive_message(sock, sender):
         message = json.loads(data)
         format_message_log(message, sender, COMPONENT_ID, sent=False)
         return message
-    except BlockingIOError:
-        # No data available; socket temporarily unavailable
-        return None
     except (socket.error, json.JSONDecodeError) as e:
         print_disconnection(f"Failed to receive or decode message from {sender}: {e}")
         return None
-
 
 def connect_to_lfd():
     """Establishes a connection to the LFD and sends a registration message."""
@@ -90,6 +90,28 @@ def handle_heartbeat():
             if message and message.get("message") == "heartbeat":
                 send_message(lfd_socket, create_message("heartbeat acknowledgment"), "LFD")
         time.sleep(1)
+
+def synchronize_state():
+    """Synchronizes the state with the reliable server if available."""
+    global state
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect((RELIABLE_SERVER_IP, RELIABLE_SERVER_PORT))
+        print_registration(f"Connected to reliable server at {RELIABLE_SERVER_IP}:{RELIABLE_SERVER_PORT}")
+
+        # Send request_state message
+        request_message = create_message("request_state")
+        send_message(sock, request_message, "Reliable Server")
+
+        # Receive the state from the reliable server
+        response = receive_message(sock, "Reliable Server")
+        if response and response.get("message") == "state_response":
+            state = response.get("state", state)
+            print_registration(f"State synchronized with reliable server. New state: {state}")
+
+        sock.close()
+    except Exception as e:
+        print_disconnection(f"Failed to connect to reliable server: {e}")
 
 def accept_new_connections(server_socket):
     """Accepts new client connections if available and adds them to the clients dictionary."""
@@ -132,7 +154,6 @@ def process_client_messages():
             print_disconnection(f"Error processing client message: {e}")
             disconnect_client(client_socket)
 
-
 def flush_message_queue():
     """Sends all responses in the message queue."""
     while not message_queue.empty():
@@ -154,6 +175,7 @@ def disconnect_client(client_socket):
 def main():
     """Main server function."""
     connect_to_lfd()
+    synchronize_state()
 
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
