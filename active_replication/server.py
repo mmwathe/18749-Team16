@@ -13,7 +13,7 @@ def printC(skk): print(f"\033[96m{skk}\033[00m")         # Cyan
 
 COMPONENT_ID = "S1"
 SERVER_IP = '0.0.0.0'
-SERVER_PORT = 12345
+SERVER_PORT = 12346
 LFD_IP = '127.0.0.1'
 LFD_PORT = 54321
 state = 0
@@ -46,9 +46,21 @@ def connect_to_lfd():
         lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         lfd_socket.connect((LFD_IP, LFD_PORT))
         printG(f"Connected to LFD at {LFD_IP}:{LFD_PORT}")
+        register_with_lfd()
     except Exception as e:
         printR(f"Failed to connect to LFD: {e}")
         lfd_socket = None
+
+def register_with_lfd():
+    """Registers the server with the LFD."""
+    global lfd_socket
+    if lfd_socket:
+        try:
+            registration_message = create_message("register")
+            lfd_socket.sendall(json.dumps(registration_message).encode())
+            printP(f"Server {COMPONENT_ID} registered with LFD.")
+        except socket.error as e:
+            printR(f"Failed to send registration to LFD: {e}")
 
 def accept_new_connection():
     global server_socket, clients

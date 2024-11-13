@@ -3,6 +3,7 @@ import time
 import json
 import argparse
 import os
+import threading
 
 # Define color functions for printing with enhanced formatting
 def printG(skk): print(f"\033[92m{skk}\033[00m")         # Green
@@ -12,10 +13,10 @@ def printLP(skk): print(f"\033[94m{skk}\033[00m")        # Light Purple
 def printP(skk): print(f"\033[95m{skk}\033[00m")         # Purple
 def printC(skk): print(f"\033[96m{skk}\033[00m")         # Cyan
 
-COMPONENT_ID = "LFD3"
-LFD_IP = '0.0.0.0'
+COMPONENT_ID = "LFD1"
+LFD_IP = '127.0.0.1'
 LFD_PORT = 54321
-GFD_IP = '127.0.0.1'
+GFD_IP = '172.26.102.232'
 GFD_PORT = 12345
 heartbeat_interval = 4
 gfd_socket = None
@@ -44,23 +45,52 @@ def register_with_gfd():
         printR(f"Failed to register with GFD: {e}")
 
 def wait_for_server():
-    """Waits for a server connection and sends a registration message to GFD."""
+    """Waits for a server connection and processes the initial registration message."""
     global server_socket, server_connected, server_id
     lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    lfd_socket.setblocking(False)
     lfd_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     lfd_socket.bind((LFD_IP, LFD_PORT))
     lfd_socket.listen(1)
 
     printY(f"LFD waiting for server connection on {LFD_IP}:{LFD_PORT}...")
+
+    while True:
+        try:
+            server_socket, server_address = lfd_socket.accept()
+            printG(f"Server connected from {server_address}")
+            server_connected = True
+            handle_server_registration()
+            handle_server_communication()  # Start handling server communication
+        except Exception as e:
+            printR(f"Failed to accept server connection: {e}")
+            time.sleep(1)  # Brief pause to retry if failed
+
+def handle_server_registration():
+    """Processes the server registration message."""
+    global server_socket, server_id
     try:
-        server_socket, server_address = lfd_socket.accept()
-        printG(f"Server connected from {server_address}")
-        server_connected = True
-        server_id = f"{server_address}"  # Default to address until we get an actual server ID
-        notify_gfd("add replica", {"server_id": os.getenv('SERVERID')})
-    except Exception as e:
-        printR(f"Failed to accept server connection: {e}")
+        data = server_socket.recv(1024).decode()
+        message = json.loads(data)
+        if message.get('message') == 'register':
+            server_id = message.get('component_id', 'Unknown Server')
+            printP(f"Server {server_id} registered with LFD.")
+            notify_gfd("add replica", {"server_id": server_id})
+    except (socket.error, json.JSONDecodeError) as e:
+        printR(f"Failed to process server registration: {e}")
+
+def handle_server_communication():
+    """Handles ongoing communication with the server, including heartbeats."""
+    global server_connected, server_socket
+    while server_connected:
+        send_heartbeat_to_server()
+        response = receive_response_from_server()
+
+        if response is None:
+            printR("Server did not respond to the heartbeat.")
+            notify_gfd("remove replica", {"server_id": server_id})
+            server_socket.close()
+            server_connected = False
+        time.sleep(heartbeat_interval)
 
 def connect_to_gfd():
     """Establishes a persistent connection to the GFD and sends registration."""
@@ -106,7 +136,7 @@ def receive_heartbeat_from_gfd():
         data = gfd_socket.recv(1024).decode()
         message = json.loads(data)
         if message.get('message') == 'heartbeat':
-            printC(f"Received heartbeat from GFD: {message}")
+            printC(f"Received heartbeat from GFD")
             acknowledgment = create_message("heartbeat acknowledgment")
             gfd_socket.sendall(json.dumps(acknowledgment).encode())
             printG("Sent heartbeat acknowledgment to GFD.")
@@ -161,10 +191,13 @@ def main():
     if not connect_to_gfd():
         return
 
+    # Start server connection handling in a separate thread
+    server_thread = threading.Thread(target=wait_for_server, daemon=True)
+    server_thread.start()
+
     try:
         while True:
             receive_heartbeat_from_gfd()
-            monitor_server()
             time.sleep(0.5)  # Prevents high CPU usage
     except KeyboardInterrupt:
         printY("LFD interrupted by user.")
