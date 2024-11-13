@@ -1,8 +1,8 @@
 import socket
 import json
 import time
-from select import select
 import threading
+from queue import Queue, Empty
 
 # Define color functions for printing with enhanced formatting
 def print_registration(skk): print(f"\033[92m{skk}\033[00m")  # Green for registrations and accepted connections
@@ -20,6 +20,7 @@ LFD_PORT = 54321
 state = 0
 lfd_socket = None
 clients = {}
+message_queue = Queue()
 
 def create_message(message_type, **kwargs):
     """Creates a standard message with component_id and timestamp."""
@@ -83,33 +84,60 @@ def handle_heartbeat():
                 send_message(lfd_socket, create_message("heartbeat acknowledgment"), "LFD")
         time.sleep(1)
 
-def start_client_listener(server_socket):
-    """Waits for and accepts new client connections."""
-    readable, _, _ = select([server_socket], [], [], 1)
-    for sock in readable:
-        client_socket, client_address = sock.accept()
-        print_registration(f"Client connected: {client_address}")
-        clients[client_socket] = client_address
+def start_client_listener():
+    """Starts listening for client connections and adds their messages to the queue."""
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_socket.bind((SERVER_IP, SERVER_PORT))
+    server_socket.listen(5)
+    print_registration(f"Server listening on {SERVER_IP}:{SERVER_PORT}")
+
+    while True:
+        try:
+            client_socket, client_address = server_socket.accept()
+            print_registration(f"Client connected: {client_address}")
+            clients[client_socket] = client_address
+        except Exception as e:
+            print_disconnection(f"Error accepting client connection: {e}")
 
 def process_client_messages():
-    """Processes messages from connected clients."""
+    """Processes messages from connected clients and flushes the message queue."""
     global state
-    readable, _, _ = select(list(clients.keys()), [], [], 1)
-    for client_socket in readable:
-        message = receive_message(client_socket, f"Client@{clients[client_socket]}")
-        if not message:
-            disconnect_client(client_socket)
-            continue
+    while True:
+        try:
+            for client_socket in list(clients.keys()):
+                message = receive_message(client_socket, f"Client@{clients[client_socket]}")
+                if not message:
+                    disconnect_client(client_socket)
+                    continue
 
-        message_type = message.get("message", "unknown")
-        if message_type == "ping":
-            response = create_message("pong")
-        elif message_type == "update":
-            state += 1
-            response = create_message("state updated", state=state)
-        else:
-            response = create_message("unknown command")
-        send_message(client_socket, response, f"Client@{clients[client_socket]}")
+                message_type = message.get("message", "unknown")
+                if message_type == "ping":
+                    response = create_message("pong")
+                elif message_type == "update":
+                    state += 1
+                    response = create_message("state updated", state=state)
+                else:
+                    response = create_message("unknown command")
+
+                # Add the message and response to the queue
+                message_queue.put((client_socket, response))
+        except Exception as e:
+            print_disconnection(f"Error processing client messages: {e}")
+
+        # Flush the message queue
+        flush_message_queue()
+
+def flush_message_queue():
+    """Sends all responses in the message queue."""
+    while not message_queue.empty():
+        try:
+            client_socket, response = message_queue.get_nowait()
+            send_message(client_socket, response, f"Client@{clients[client_socket]}")
+        except KeyError:
+            print_disconnection("Attempted to send message to a disconnected client.")
+        except Exception as e:
+            print_disconnection(f"Error sending message from queue: {e}")
 
 def disconnect_client(client_socket):
     """Disconnects a client and removes it from the active clients list."""
@@ -120,26 +148,14 @@ def disconnect_client(client_socket):
 
 def main():
     """Main server function."""
-    global lfd_socket
-
-    # Start listening for client connections
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_socket.bind((SERVER_IP, SERVER_PORT))
-    server_socket.listen(5)
-    print_registration(f"Server listening on {SERVER_IP}:{SERVER_PORT}")
-
-    # Connect to the LFD
     connect_to_lfd()
 
-    # Start heartbeat thread
-    heartbeat_thread = threading.Thread(target=handle_heartbeat, daemon=True)
-    heartbeat_thread.start()
+    # Start client listener in the main loop
+    threading.Thread(target=start_client_listener, daemon=True).start()
 
+    # Start processing client messages
     try:
-        while True:
-            start_client_listener(server_socket)
-            process_client_messages()
+        process_client_messages()
     except KeyboardInterrupt:
         print_warning("Server shutting down.")
     finally:
