@@ -1,51 +1,31 @@
-import socket  
-import json
+import socket
 import time
 import threading
-import os
-from dotenv import load_dotenv
-
-def printG(skk): print(f"\033[92m{skk}\033[00m")         # Green
-def printR(skk): print(f"\033[91m{skk}\033[00m")         # Red
-def printY(skk): print(f"\033[93m{skk}\033[00m")         # Yellow
-def printLP(skk): print(f"\033[94m{skk}\033[00m")        # Light Purple
-def printP(skk): print(f"\033[95m{skk}\033[00m")         # Purple
-def printC(skk): print(f"\033[96m{skk}\033[00m")         # Cyan
+from communication_utils import *
 
 COMPONENT_ID = "GFD"
 membership = {}
 member_count = 0
 lock = threading.Lock()
 rm_socket = None
-heartbeat_interval = 5   
-
-def create_message(message_type, **kwargs):
-    """Creates a standard message with component_id and timestamp."""
-    message = {
-        "component_id": COMPONENT_ID,
-        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-        "message": message_type
-    }
-    message.update(kwargs)
-    return message
+heartbeat_interval = 5
 
 def register_with_rm(rm_ip, rm_port):
     """Registers GFD with RM by opening a persistent connection and sending the initial member count."""
     global rm_socket, member_count
     try:
-        rm_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        rm_socket.connect((rm_ip, rm_port))
-        message = create_message("register", member_count=member_count)
-        rm_socket.sendall(json.dumps(message).encode())
-        printP(f"GFD registered with RM: {member_count} members")
+        rm_socket = connect_to_socket(rm_ip, rm_port)
+        if rm_socket:
+            message = create_message(COMPONENT_ID, "register", member_count=member_count)
+            send(rm_socket, message, COMPONENT_ID, "RM")
+            printP(f"GFD registered with RM: {member_count} members")
     except socket.error as e:
         printR(f"Failed to register with RM: {e}")
 
 def handle_lfd_connection(conn, addr):
     try:
         # Receive the initial registration message from the LFD
-        data = conn.recv(1024).decode()
-        message = json.loads(data)
+        message = receive(conn, "LFD", COMPONENT_ID)
 
         # Retrieve and print the component_id from the LFD's registration message
         component_id = message.get("component_id", "Unknown")
@@ -54,20 +34,16 @@ def handle_lfd_connection(conn, addr):
 
         # Handle further messages from this LFD in a loop
         while True:
-            data = conn.recv(1024).decode()
-            if not data:
+            message = receive(conn, component_id, COMPONENT_ID)
+            if not message:
                 printR(f"LFD at {addr} disconnected.")
                 break
 
             # Process the incoming message from the LFD
-            try:
-                message = json.loads(data)
-                if "LFD" in message.get("component_id"):
-                    handle_lfd_message(component_id, message)
-                else:
-                    printY(f"Ignored message from unknown component: {message.get('component_id')}")
-            except json.JSONDecodeError as e:
-                printR(f"Failed to decode message from LFD: {e}")
+            if "LFD" in message.get("component_id"):
+                handle_lfd_message(component_id, message)
+            else:
+                printY(f"Ignored message from unknown component: {message.get('component_id')}")
     except socket.error as e:
         printR(f"Error receiving message from LFD at {addr}: {e}")
     finally:
@@ -88,8 +64,8 @@ def handle_lfd_message(component_id, message):
             delete_replica(server_id)
         else:
             printR("Remove replica message missing 'server_id'.")
-    elif action == "heartbeat acknowledgment":   
-        printY(f"Heartbeat acknowledgment received from {component_id}")
+    elif action == "heartbeat acknowledgment":
+        pass
     else:
         printLP(f"Unknown action '{action}' from LFD")
 
@@ -97,9 +73,8 @@ def send_heartbeat_continuously(conn, addr, component_id):
     """Sends heartbeat messages continuously to an LFD."""
     while True:
         try:
-            message = create_message("heartbeat")
-            conn.sendall(json.dumps(message).encode())
-            printC(f"Sent heartbeat to {component_id}")
+            message = create_message(COMPONENT_ID, "heartbeat")
+            send(conn, message, COMPONENT_ID, component_id)
             time.sleep(heartbeat_interval)
         except socket.error as e:
             printR(f"Failed to send heartbeat to LFD at {addr}: {e}")
@@ -131,15 +106,12 @@ def delete_replica(replica_id):
 def send_update_to_rm():
     """Sends updated membership count to RM."""
     global rm_socket, member_count
-    update_membership = create_message("update_membership", member_count=member_count)
-    try:
-        if rm_socket:
-            rm_socket.sendall(json.dumps(update_membership).encode())
-            printG(f"Sent updated membership count to RM: {member_count}")
-        else:
-            printR("No active connection to RM.")
-    except socket.error as e:
-        printR(f"Failed to send update to RM: {e}")
+    if rm_socket:
+        update_membership = create_message(COMPONENT_ID, "update_membership", member_count=member_count)
+        send(rm_socket, update_membership, COMPONENT_ID, "RM")
+        printG(f"Sent updated membership count to RM: {member_count}")
+    else:
+        printR("No active connection to RM.")
 
 def print_membership():
     """Prints the current membership list."""
@@ -152,23 +124,12 @@ def print_membership():
         printP("  [No replicas currently in membership]")
 
 def main():
-    global server_socket
-
     GFD_IP = '0.0.0.0'
     GFD_PORT = 12345
     RM_IP = '127.0.0.1'
     RM_PORT = 12346
 
-    printC("====================================")
-    printC("    Global Fault Detector (GFD)     ")
-    printC(f"GFD active on {GFD_IP, GFD_PORT}")
-    printC("====================================")
-
-    # Initialize and bind the server socket
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((GFD_IP, GFD_PORT))
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_socket.listen(5)
+    server_socket = initialize_component(COMPONENT_ID, "Global Fault Detector", GFD_IP, GFD_PORT, 5)
 
     # Register with RM
     register_with_rm(RM_IP, RM_PORT)
