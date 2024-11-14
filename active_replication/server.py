@@ -4,6 +4,7 @@ import time
 from queue import Queue, Empty
 import threading
 import os
+import errno
 
 # Define color functions for printing with enhanced formatting
 def print_registration(skk): print(f"\033[92m{skk}\033[00m")  # Green for registrations and accepted connections
@@ -19,7 +20,7 @@ SERVER_PORT = 12346
 LFD_IP = '127.0.0.1'
 LFD_PORT = 54321
 
-RELIABLE_SERVER_IP = os.environ.get("RELIABLE_SERVER_IP")
+RELIABLE_SERVER_IP = os.environ.get("S1")
 RELIABLE_SERVER_PORT = 12351
 
 state = 0
@@ -158,6 +159,39 @@ def process_client_messages():
             print_disconnection(f"Error processing client message: {e}")
             disconnect_client(client_socket)
 
+def synchronize_state():
+    """Synchronizes the state with the reliable server if available."""
+    global state
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(3)  # Set a strict timeout for the connection
+        sock.connect((RELIABLE_SERVER_IP, RELIABLE_SERVER_PORT))
+        print_registration(f"Connected to reliable server at {RELIABLE_SERVER_IP}:{RELIABLE_SERVER_PORT}")
+
+        # Send request_state message
+        request_message = create_message("request_state")
+        send_message(sock, request_message, "Reliable Server")
+
+        # Receive the state from the reliable server with a timeout
+        sock.settimeout(2)  # Timeout for receiving the state response
+        response = receive_message(sock, "Reliable Server")
+        if response and response.get("message") == "state_response":
+            state = response.get("state", state)
+            print_registration(f"State synchronized with reliable server. New state: {state}")
+        else:
+            print_warning("No valid state response received from reliable server.")
+    except socket.timeout:
+        print_warning("Synchronization timed out while waiting for the reliable server.")
+    except socket.error as e:
+        if e.errno in (errno.ECONNREFUSED, errno.ETIMEDOUT):
+            print_warning("Reliable server unavailable. Skipping synchronization.")
+        else:
+            print_disconnection(f"Socket error during synchronization: {e}")
+    except Exception as e:
+        print_disconnection(f"Failed to synchronize with reliable server: {e}")
+    finally:
+        sock.close() 
+
 def flush_message_queue():
     """Sends all responses in the message queue."""
     while not message_queue.empty():
@@ -177,17 +211,22 @@ def disconnect_client(client_socket):
     client_socket.close()
 
 def main():
-    """Main server function."""
+    isReliableServer = COMPONENT_ID == "S1"
+    
     connect_to_lfd()
+    if (not isReliableServer): synchronize_state()
+
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_socket.bind((SERVER_IP, SERVER_PORT))
     server_socket.listen(5)
     print_registration(f"Server listening on {SERVER_IP}:{SERVER_PORT}")
-    server_socket2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_socket2.bind((RELIABLE_SERVER_IP, RELIABLE_SERVER_PORT))
-    server_socket2.listen(5)
+
+    if (isReliableServer):
+        server_socket2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_socket2.bind((RELIABLE_SERVER_IP, RELIABLE_SERVER_PORT))
+        server_socket2.listen(5)
 
     # Start the heartbeat thread
     threading.Thread(target=handle_heartbeat, daemon=True).start()
@@ -196,7 +235,7 @@ def main():
         while True:
             accept_new_connections(server_socket)  # Non-blocking, checks for connections
             process_client_messages()  # Process any client messages
-            accept_new_connections_reliable(server_socket2)
+            if (isReliableServer): accept_new_connections_reliable(server_socket2)
             flush_message_queue()  # Send responses to clients
             time.sleep(0.1)  # Prevent high CPU usage
     except KeyboardInterrupt:
