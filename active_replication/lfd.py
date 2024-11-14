@@ -3,6 +3,7 @@ import time
 import json
 import argparse
 import threading
+import os
 
 # Define color functions for printing with enhanced formatting
 def print_sent(skk): print(f"\033[96m{skk}\033[00m")  # Cyan for sent messages
@@ -13,10 +14,10 @@ def printG(skk): print(f"\033[92m{skk}\033[00m")         # Green
 
 
 # Global Configurations
-COMPONENT_ID = "LFD2"
+COMPONENT_ID = os.environ.get("MY_LFD_ID")
 LFD_IP = '127.0.0.1'
 LFD_PORT = 54321
-GFD_IP = '172.26.102.232'
+GFD_IP = os.environ.get("GFD_IP")
 GFD_PORT = 12345
 heartbeat_interval = 4
 timeout_threshold = 10  # Time in seconds to wait for a response before marking server as "dead"

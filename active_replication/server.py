@@ -3,6 +3,7 @@ import json
 import time
 from queue import Queue, Empty
 import threading
+import os
 
 # Define color functions for printing with enhanced formatting
 def print_registration(skk): print(f"\033[92m{skk}\033[00m")  # Green for registrations and accepted connections
@@ -12,11 +13,15 @@ def print_sent(skk): print(f"\033[96m{skk}\033[00m")  # Cyan for sent messages
 def print_received(skk): print(f"\033[95m{skk}\033[00m")  # Purple for received messages
 
 # Global Configurations
-COMPONENT_ID = "S2"
+COMPONENT_ID = os.environ.get("MY_SERVER_ID")
 SERVER_IP = '0.0.0.0'
 SERVER_PORT = 12346
 LFD_IP = '127.0.0.1'
 LFD_PORT = 54321
+
+RELIABLE_SERVER_IP = os.environ.get("RELIABLE_SERVER_IP")
+RELIABLE_SERVER_PORT = 12351
+
 state = 0
 lfd_socket = None
 clients = {}
@@ -69,7 +74,6 @@ def receive_message(sock, sender):
         print_disconnection(f"Failed to receive or decode message from {sender}: {e}")
         return None
 
-
 def connect_to_lfd():
     """Establishes a connection to the LFD and sends a registration message."""
     global lfd_socket
@@ -90,6 +94,30 @@ def handle_heartbeat():
             if message and message.get("message") == "heartbeat":
                 send_message(lfd_socket, create_message("heartbeat acknowledgment"), "LFD")
         time.sleep(1)
+
+def handle_request_state(client_socket):
+    """Handles a request_state message from another server."""
+    global state
+    response = create_message("state_response", state=state)
+    send_message(client_socket, response, "Requesting Server")
+
+def accept_new_connections_reliable(server_socket):
+    """Accepts new client or server connections."""
+    # Non-blocking mode
+    try:
+        client_socket, client_address = server_socket.accept()
+        print_registration(f"Connection established: {client_address}")
+        # Handle request_state message if received
+        message = receive_message(client_socket, f"Server@{client_address}")
+        if message and message.get("message") == "request_state":
+            handle_request_state(client_socket)
+        else:
+            clients[client_socket] = client_address
+    except BlockingIOError:
+        pass
+    except Exception as e:
+        print_disconnection(f"Error accepting client connection: {e}")
+    server_socket.setblocking(False)
 
 def accept_new_connections(server_socket):
     """Accepts new client connections if available and adds them to the clients dictionary."""
@@ -113,7 +141,6 @@ def process_client_messages():
             message = receive_message(client_socket, f"Client@{clients[client_socket]}")
             if not message:  # If no message is received, skip further processing
                 continue
-
             message_type = message.get("message", "unknown")
             if message_type == "ping":
                 response = create_message("pong")
@@ -122,7 +149,6 @@ def process_client_messages():
                 response = create_message("state updated", state=state)
             else:
                 response = create_message("unknown command")
-
             # Add the response to the queue
             message_queue.put((client_socket, response))
         except BlockingIOError:
@@ -131,7 +157,6 @@ def process_client_messages():
         except Exception as e:
             print_disconnection(f"Error processing client message: {e}")
             disconnect_client(client_socket)
-
 
 def flush_message_queue():
     """Sends all responses in the message queue."""
@@ -154,12 +179,15 @@ def disconnect_client(client_socket):
 def main():
     """Main server function."""
     connect_to_lfd()
-
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_socket.bind((SERVER_IP, SERVER_PORT))
     server_socket.listen(5)
     print_registration(f"Server listening on {SERVER_IP}:{SERVER_PORT}")
+    server_socket2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_socket2.bind((RELIABLE_SERVER_IP, RELIABLE_SERVER_PORT))
+    server_socket2.listen(5)
 
     # Start the heartbeat thread
     threading.Thread(target=handle_heartbeat, daemon=True).start()
@@ -168,6 +196,7 @@ def main():
         while True:
             accept_new_connections(server_socket)  # Non-blocking, checks for connections
             process_client_messages()  # Process any client messages
+            accept_new_connections_reliable(server_socket2)
             flush_message_queue()  # Send responses to clients
             time.sleep(0.1)  # Prevent high CPU usage
     except KeyboardInterrupt:
@@ -179,6 +208,5 @@ def main():
             disconnect_client(client)
         server_socket.close()
         print_disconnection("Server terminated.")
-
 if __name__ == '__main__':
     main()
