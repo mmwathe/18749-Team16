@@ -50,20 +50,12 @@ def handle_lfd_connection(conn, addr):
         conn.close()
 
 def handle_lfd_message(component_id, message):
-    """Processes messages from LFD for add/remove replicas or heartbeat acknowledgments."""
-    action = message.get("message", "").lower()
-    if action == "add replica":
-        server_id = message.get("message_data", {}).get("server_id")
-        if server_id:
-            add_replica(server_id)
-        else:
-            printR("Add replica message missing 'server_id'.")
-    elif action == "remove replica":
-        server_id = message.get("message_data", {}).get("server_id")
-        if server_id:
-            delete_replica(server_id)
-        else:
-            printR("Remove replica message missing 'server_id'.")
+    action = message.get("message", "")
+    server_id = message.get("message_data", "")
+    if action == "add replica" and server_id:
+        add_replica(server_id)
+    elif action == "remove replica" and server_id:
+        delete_replica(server_id)
     elif action == "heartbeat acknowledgment":
         pass
     else:
