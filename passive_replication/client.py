@@ -1,6 +1,9 @@
 import socket
 import time
 from communication_utils import create_message, send, receive, printG, printR, printY
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # List of server IPs in order of preference
 SERVER_IPS = [

@@ -4,6 +4,9 @@ import time
 from queue import Queue
 import os
 from communication_utils import *
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Configuration
 COMPONENT_ID = os.environ.get("MY_SERVER_ID")  # Unique ID for each server (e.g., 'S1', 'S2', ...)
@@ -11,11 +14,12 @@ SERVER_IP = '0.0.0.0'
 SERVER_PORT = 12346
 CHECKPOINT_PORT = 12347
 PRIMARY_SERVER_ID = 'S1'  # S1 starts as the primary
+
 SERVER_IDS = ['S1', 'S2', 'S3']  # List of all server IDs
 SERVER_IPS = {
-    'S1': '172.26.45.165',  # Replace with actual IP addresses
-    'S2': '172.26.115.84',
-    'S3': '172.26.120.60'
+    'S1': os.environ.get("S1"),  # Replace with actual IP addresses
+    'S2': os.environ.get("S2"),
+    'S3': os.environ.get("S3"),
 }
 CHECKPOINT_INTERVAL = 10  # Checkpoint interval for primary server
 LFD_IP = '127.0.0.1'
