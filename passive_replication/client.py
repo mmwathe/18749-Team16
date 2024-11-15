@@ -14,8 +14,8 @@ SERVER_IPS = [
 ]
 
 class Client:
-    def __init__(self, server_ips, server_port, client_id):
-        self.server_ips = server_ips
+    def __init__(self, server_port, client_id):
+        self.server_ips = SERVER_IPS
         self.server_port = server_port
         self.client_id = client_id
         self.socket = None

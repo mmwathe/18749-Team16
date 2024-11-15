@@ -1,7 +1,6 @@
 import socket
-import threading
 import time
-from queue import Queue
+import threading
 import os
 from communication_utils import *
 from dotenv import load_dotenv
@@ -13,27 +12,27 @@ COMPONENT_ID = os.environ.get("MY_SERVER_ID")  # Unique ID for each server (e.g.
 SERVER_IP = '0.0.0.0'
 SERVER_PORT = 12346
 CHECKPOINT_PORT = 12347
-PRIMARY_SERVER_ID = 'S1'  # S1 starts as the primary
+PRIMARY_SERVER_ID = 'S1'  # Primary server starts as S1
 
-SERVER_IDS = ['S1', 'S2', 'S3']  # List of all server IDs
+SERVER_IDS = ['S1', 'S2', 'S3']
 SERVER_IPS = {
-    'S1': os.environ.get("S1"),  # Replace with actual IP addresses
+    'S1': os.environ.get("S1"),
     'S2': os.environ.get("S2"),
     'S3': os.environ.get("S3"),
 }
-CHECKPOINT_INTERVAL = 10  # Checkpoint interval for primary server
+CHECKPOINT_INTERVAL = 10
 LFD_IP = '127.0.0.1'
 LFD_PORT = 54321
 
 state = 0
-role = 'backup'  # Initially a backup; primary role must be explicitly assigned
+role = 'backup'
 clients = {}
 client_lock = threading.Lock()
 lfd_socket = None
-message_queue = Queue()
+
 
 def connect_to_lfd():
-    """Establishes a connection to the LFD and sends a registration message."""
+    """Connect to the LFD and register."""
     global lfd_socket
     while not lfd_socket:
         try:
@@ -47,25 +46,30 @@ def connect_to_lfd():
             lfd_socket = None
             time.sleep(5)
 
+
 def handle_heartbeat():
-    """Handles heartbeat messages from the LFD."""
+    """Respond to heartbeats from the LFD."""
     while True:
-        if lfd_socket:
-            message = receive(lfd_socket, COMPONENT_ID)
-            if message and message.get("message") == "heartbeat":
-                heartbeat_message = create_message(COMPONENT_ID, "heartbeat acknowledgment")
-                send(lfd_socket, heartbeat_message, "LFD")
+        try:
+            if lfd_socket:
+                message = receive(lfd_socket, COMPONENT_ID)
+                if message and message.get("message") == "heartbeat":
+                    heartbeat_message = create_message(COMPONENT_ID, "heartbeat acknowledgment")
+                    send(lfd_socket, heartbeat_message, "LFD")
+        except Exception as e:
+            printR(f"Heartbeat handling error: {e}")
         time.sleep(1)
 
-# Role determination
+
 def determine_role():
+    """Determine whether the server is primary or backup."""
     global role
     role = 'primary' if COMPONENT_ID == PRIMARY_SERVER_ID else 'backup'
     printG(f"Server {COMPONENT_ID} starting as {role}.")
 
-# Client communication
+
 def accept_client_connections(server_socket):
-    """Accept client connections."""
+    """Accept client connections and handle them if primary."""
     while True:
         try:
             client_socket, client_address = server_socket.accept()
@@ -77,14 +81,15 @@ def accept_client_connections(server_socket):
         except Exception as e:
             printR(f"Error accepting client connections: {e}")
 
+
 def handle_client_requests(client_socket):
-    """Handle client requests (only if the server is primary)."""
+    """Handle client requests if primary."""
     global state
     try:
         while True:
             message = receive(client_socket, COMPONENT_ID)
             if not message:
-                printY(f"Client disconnected.")
+                printY("Client disconnected.")
                 break
 
             message_type = message.get("message")
@@ -105,9 +110,9 @@ def handle_client_requests(client_socket):
             clients.pop(client_socket, None)
         client_socket.close()
 
-# Checkpointing
+
 def send_checkpoint():
-    """Send checkpoints to backup servers (only if primary)."""
+    """Send checkpoints to backup servers if primary."""
     global state
     while role == 'primary':
         time.sleep(CHECKPOINT_INTERVAL)
@@ -126,7 +131,7 @@ def send_checkpoint():
             except Exception as e:
                 printR(f"Failed to send checkpoint to {server_id}: {e}")
 
-# Backup synchronization
+
 def accept_checkpoint_connections(checkpoint_socket):
     """Accept checkpoints from the primary server."""
     global state
@@ -142,6 +147,7 @@ def accept_checkpoint_connections(checkpoint_socket):
             conn.close()
         except Exception as e:
             printR(f"Error accepting checkpoint: {e}")
+
 
 def synchronize_with_primary():
     """Synchronize state with the primary server."""
@@ -160,26 +166,21 @@ def synchronize_with_primary():
     except Exception as e:
         printR(f"Failed to synchronize with primary: {e}")
 
-# Main server logic
+
 def main():
     determine_role()
-
-    # LFD Connection
     connect_to_lfd()
+    threading.Thread(target=handle_heartbeat, daemon=True).start()
 
-    # Sockets for client and checkpoint communication
     client_socket = initialize_component(COMPONENT_ID, "Client Handler", SERVER_IP, SERVER_PORT, 5)
     checkpoint_socket = initialize_component(COMPONENT_ID, "Checkpoint Handler", SERVER_IP, CHECKPOINT_PORT, 5)
 
-    # Start accepting client and checkpoint connections
     threading.Thread(target=accept_client_connections, args=(client_socket,), daemon=True).start()
     threading.Thread(target=accept_checkpoint_connections, args=(checkpoint_socket,), daemon=True).start()
 
-    # If backup, synchronize with primary
     if role == 'backup':
         synchronize_with_primary()
 
-    # If primary, start checkpointing
     if role == 'primary':
         threading.Thread(target=send_checkpoint, daemon=True).start()
 
@@ -195,6 +196,7 @@ def main():
         client_socket.close()
         checkpoint_socket.close()
         printR("Server terminated.")
+
 
 if __name__ == "__main__":
     main()
