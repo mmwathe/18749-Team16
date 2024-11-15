@@ -1,15 +1,17 @@
 import socket
 import time
-from communication_utils import create_message, send, receive, printG, printR, printY
+from communication_utils import *
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # List of server IPs in order of preference
 SERVER_IPS = [
-    '127.0.0.1',  # Adjust to actual server IPs
+    os.environ.get("S1"),
+    os.environ.get("S2"),
+    os.environ.get("S3")  # Adjust to actual server IPs
 ]
-
-CLIENT_ID = "C1"
-SERVER_PORT = 12346
-
 
 class Client:
     def __init__(self, server_ips, server_port, client_id):
@@ -65,13 +67,3 @@ class Client:
                     continue
 
             self.send_and_receive()
-
-
-if __name__ == "__main__":
-    client = Client(SERVER_IPS, SERVER_PORT, CLIENT_ID)
-    try:
-        client.run()
-    except KeyboardInterrupt:
-        printY("Client exiting...")
-        if client.socket:
-            client.socket.close()
