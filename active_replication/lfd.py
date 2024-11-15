@@ -71,11 +71,14 @@ def connect_to_gfd():
 
 def receive_heartbeat_from_gfd():
     while True:
-        if gfd_socket:
-            message = receive(gfd_socket, COMPONENT_ID)
-            if message and message.get("message") == "heartbeat":
-                heartbeat_acknowledgement = create_message(COMPONENT_ID, "heartbeat acknowledgment")
-                send(gfd_socket, heartbeat_acknowledgement, "GFD")
+        try:
+            if gfd_socket:
+                message = receive(gfd_socket, COMPONENT_ID)
+                if message and message.get("message") == "heartbeat":
+                    heartbeat_acknowledgement = create_message(COMPONENT_ID, "heartbeat acknowledgment")
+                    send(gfd_socket, heartbeat_acknowledgement, "GFD")
+        except Exception as e:
+            printR(f"Error heartbeating with GFD: {e}")
 
 def main():
     global heartbeat_interval

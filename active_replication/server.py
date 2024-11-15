@@ -17,6 +17,7 @@ def print_received(skk): print(f"\033[95m{skk}\033[00m")  # Purple for received 
 COMPONENT_ID = os.environ.get("MY_SERVER_ID")
 SERVER_IP = '0.0.0.0'
 SERVER_PORT = 12346
+LFD_ID = os.environ.get("MY_LFD_ID")
 LFD_IP = '127.0.0.1'
 LFD_PORT = 54321
 
@@ -35,7 +36,8 @@ def connect_to_lfd():
         lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         lfd_socket.connect((LFD_IP, LFD_PORT))
         print_registration(f"Connected to LFD at {LFD_IP}:{LFD_PORT}")
-        send(lfd_socket, create_message(COMPONENT_ID, "register"), "LFD")
+        registration_message = create_message(COMPONENT_ID, "register")
+        send(lfd_socket, registration_message, LFD_ID)
     except Exception as e:
         print_disconnection(f"Failed to connect to LFD: {e}")
         lfd_socket = None
@@ -44,9 +46,10 @@ def handle_heartbeat():
     """Handles heartbeat messages from the LFD."""
     while True:
         if lfd_socket:
-            message = receive(lfd_socket, "LFD", COMPONENT_ID)
+            message = receive(lfd_socket, COMPONENT_ID)
             if message and message.get("message") == "heartbeat":
-                send(lfd_socket, create_message(COMPONENT_ID, "heartbeat acknowledgment"), "LFD")
+                heartbeat_message = create_message(COMPONENT_ID, "heartbeat acknowledgment")
+                send(lfd_socket, heartbeat_message, LFD_ID)
         time.sleep(1)
 
 def handle_request_state(client_socket):
@@ -62,7 +65,7 @@ def accept_new_connections_reliable(server_socket):
         client_socket, client_address = server_socket.accept()
         print_registration(f"Connection established: {client_address}")
         # Handle request_state message if received
-        message = receive(client_socket, f"Server@{client_address}", COMPONENT_ID)
+        message = receive(client_socket, COMPONENT_ID)
         if message and message.get("message") == "request_state":
             handle_request_state(client_socket)
         else:
@@ -92,7 +95,7 @@ def process_client_messages():
     for client_socket in list(clients.keys()):
         try:
             client_socket.setblocking(False)  # Allow non-blocking mode for receiving
-            message = receive(client_socket, f"Client@{clients[client_socket]}", COMPONENT_ID)
+            message = receive(client_socket, COMPONENT_ID)
             if not message:  # If no message is received, skip further processing
                 continue
             message_type = message.get("message", "unknown")
@@ -127,7 +130,7 @@ def synchronize_state():
 
         # Receive the state from the reliable server with a timeout
         sock.settimeout(2)  # Timeout for receiving the state response
-        response = receive(sock, "Reliable Server", COMPONENT_ID)
+        response = receive(sock, COMPONENT_ID)
         if response and response.get("message") == "state_response":
             state = response.get("state", state)
             print_registration(f"State synchronized with reliable server. New state: {state}")
