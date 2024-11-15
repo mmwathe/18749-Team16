@@ -19,21 +19,24 @@ def create_message(component_id, message_type, **kwargs):
         **kwargs
     }
 
-def send(sock, message, receiver):
+def send(sock, message, receiver, print_message=True):
     """Sends a message through the provided socket."""
     try:
         sock.sendall(json.dumps(message).encode())
-        print_log(message, receiver, sent=True)
+        if print_message:
+            print_log(message, receiver, sent=True)
     except socket.error as e:
         print(f"\033[91mFailed to send message to {receiver}: {e}\033[00m")
+        raise
 
-def receive(sock, receiver):
+def receive(sock, receiver, print_message=True):
     try:
         data = sock.recv(1024).decode()
         if not data:
             return None
         message = json.loads(data)
-        print_log(message, receiver, sent=False)
+        if print_message:
+            print_log(message, receiver, sent=False)
         return message
     except (socket.error, json.JSONDecodeError) as e:
         return None
