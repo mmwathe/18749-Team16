@@ -4,12 +4,15 @@ import argparse
 import threading
 import os
 from communication_utils import *
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Global Configurations
 COMPONENT_ID = os.environ.get("MY_LFD_ID")
 LFD_IP = '127.0.0.1'
 LFD_PORT = 54321
-GFD_IP = '0.0.0.0'
+GFD_IP = os.environ.get("GFD_IP")
 GFD_PORT = 12345
 heartbeat_interval = 4
 timeout_threshold = 10  # Time in seconds to wait for a response before marking server as "dead"
