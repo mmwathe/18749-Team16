@@ -2,179 +2,170 @@ import socket
 import threading
 import time
 import os
-from communication_utils import create_message, send, receive, printG, printR, printY, printP
+from communication_utils import *
 
-# Global Configurations
-COMPONENT_ID = os.environ.get("MY_SERVER_ID")  # 'S1', 'S2', 'S3', etc.
+# Configuration
+COMPONENT_ID = os.environ.get("MY_SERVER_ID")  # Unique ID for each server (e.g., 'S1', 'S2', ...)
 SERVER_IP = '0.0.0.0'
-CLIENT_PORT = 12346  # Port for client connections
-CHECKPOINT_PORT = 12347  # Port for checkpoint communication
-LFD_IP = '127.0.0.1'
-LFD_PORT = 54321
-
-PRIMARY_ID = 'S1'  # Primary server starts as S1
+SERVER_PORT = 12346
+CHECKPOINT_PORT = 12347
+PRIMARY_SERVER_ID = 'S1'  # S1 starts as the primary
+SERVER_IDS = ['S1', 'S2', 'S3']  # List of all server IDs
 SERVER_IPS = {
-    'S1': os.environ.get("S1"),
-    'S2': os.environ.get("S2"),
-    'S3': os.environ.get("S3"),
+    'S1': '172.26.45.165',  # Replace with actual IP addresses
+    'S2': '172.26.115.84',
+    'S3': '172.26.120.60'
 }
+CHECKPOINT_INTERVAL = 10  # Checkpoint interval for primary server
 
-BACKUP_SERVERS = {sid: (ip, CHECKPOINT_PORT) for sid, ip in SERVER_IPS.items() if sid != COMPONENT_ID}
-
-# Global State
+# Globals
 state = 0
-role = None  # 'primary' or 'backup'
-clients = {}
-lfd_socket = None  # Connection to LFD
+role = 'backup'  # Initially a backup; primary role must be explicitly assigned
+client_connections = {}
+lfd_socket = None
 
-# Timers
-heartbeat_interval = 2
-checkpoint_interval = 10
+# Determine the primary server address
+def get_primary_server_address():
+    primary_ip = SERVER_IPS[PRIMARY_SERVER_ID]
+    return primary_ip, CHECKPOINT_PORT
 
-
+# Role determination
 def determine_role():
-    """Determine the server's role based on its ID."""
     global role
-    role = 'primary' if COMPONENT_ID == PRIMARY_ID else 'backup'
+    role = 'primary' if COMPONENT_ID == PRIMARY_SERVER_ID else 'backup'
     printG(f"Server {COMPONENT_ID} starting as {role}.")
 
-
-def connect_to_lfd():
-    """Establish a connection to the LFD and register."""
-    global lfd_socket
-    while not lfd_socket:
-        try:
-            lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            lfd_socket.connect((LFD_IP, LFD_PORT))
-            printG(f"Connected to LFD at {LFD_IP}:{LFD_PORT}")
-            send(lfd_socket, create_message(COMPONENT_ID, "register"), "LFD")
-        except Exception as e:
-            printR(f"Failed to connect to LFD: {e}. Retrying in 5 seconds...")
-            lfd_socket = None
-            time.sleep(5)
-
-
-def respond_to_heartbeat():
-    """Respond to heartbeat messages from the LFD."""
+# Client communication
+def accept_client_connections(server_socket):
+    """Accept client connections and handle requests if primary."""
     while True:
         try:
-            if lfd_socket:
-                message = receive(lfd_socket, "LFD")
-                if message and message.get("message") == "heartbeat":
-                    send(lfd_socket, create_message(COMPONENT_ID, "heartbeat acknowledgment"), "LFD")
-        except Exception as e:
-            printR(f"Error responding to LFD heartbeat: {e}")
-        time.sleep(heartbeat_interval)
-
-
-def handle_client_connections(sock):
-    """Accept and process client connections."""
-    sock.setblocking(False)
-    while True:
-        try:
-            client_socket, client_address = sock.accept()
+            client_socket, client_address = server_socket.accept()
             printG(f"Client connected: {client_address}")
-            threading.Thread(target=process_client_messages, args=(client_socket,), daemon=True).start()
-        except BlockingIOError:
-            time.sleep(0.1)
+            client_connections[client_socket] = client_address
+            if role == 'primary':
+                threading.Thread(target=handle_client_requests, args=(client_socket,), daemon=True).start()
+        except Exception as e:
+            printR(f"Error accepting client connections: {e}")
 
-
-def process_client_messages(client_socket):
-    """Process messages from a connected client."""
-    global state, role
-
-    while True:
-        try:
-            message = receive(client_socket, f"Client@{client_socket.getpeername()}")
+def handle_client_requests(client_socket):
+    """Handle client requests (only if the server is primary)."""
+    global state
+    try:
+        while True:
+            message = receive(client_socket, COMPONENT_ID)
             if not message:
+                printY(f"Client disconnected.")
                 break
 
-            if message["message"] == "update" and role == "primary":
+            message_type = message.get("message")
+            if message_type == "update":
                 state += 1
-                send(client_socket, create_message(COMPONENT_ID, "state updated", state=state), f"Client@{client_socket.getpeername()}")
-                send_checkpoint_to_backups()
-            elif message["message"] == "ping":
-                send(client_socket, create_message(COMPONENT_ID, "pong"), f"Client@{client_socket.getpeername()}")
+                printG(f"State updated to {state} by client request.")
+                response = create_message(COMPONENT_ID, "state updated", state=state)
+                send(client_socket, response, "Client")
+            elif message_type == "ping":
+                response = create_message(COMPONENT_ID, "pong")
+                send(client_socket, response, "Client")
             else:
-                send(client_socket, create_message(COMPONENT_ID, "unknown command"), f"Client@{client_socket.getpeername()}")
-        except Exception as e:
-            printR(f"Error processing message from client: {e}")
-            break
+                printY(f"Unknown message type: {message_type}")
+    except Exception as e:
+        printR(f"Error handling client request: {e}")
+    finally:
+        client_socket.close()
+        client_connections.pop(client_socket, None)
 
-    printY(f"Client disconnected: {client_socket.getpeername()}")
-    client_socket.close()
-
-
-def send_checkpoint_to_backups():
-    """Send the current state to backup servers."""
+# Checkpointing
+def send_checkpoint():
+    """Send checkpoints to backup servers (only if primary)."""
     global state
-    for backup_id, (backup_ip, port) in BACKUP_SERVERS.items():
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect((backup_ip, port))
-            checkpoint_message = create_message(COMPONENT_ID, "checkpoint", state=state)
-            send(sock, checkpoint_message, f"Backup Server@{backup_ip}")
-            response = receive(sock, f"Backup Server@{backup_ip}")
-            if response and response["message"] == "checkpoint_acknowledgment":
-                printG(f"Checkpoint acknowledged by Backup Server {backup_id}")
-            sock.close()
-        except Exception as e:
-            printR(f"Failed to send checkpoint to Backup Server {backup_id}: {e}")
+    while role == 'primary':
+        time.sleep(CHECKPOINT_INTERVAL)
+        for server_id, server_ip in SERVER_IPS.items():
+            if server_id == COMPONENT_ID:
+                continue  # Skip self
+            try:
+                checkpoint_socket = connect_to_socket(server_ip, CHECKPOINT_PORT)
+                if checkpoint_socket:
+                    checkpoint_message = create_message(
+                        COMPONENT_ID, "checkpoint", state=state
+                    )
+                    send(checkpoint_socket, checkpoint_message, f"Backup {server_id}")
+                    ack = receive(checkpoint_socket, f"Backup {server_id}")
+                    if ack and ack.get("message") == "checkpoint_acknowledgment":
+                        printG(f"Checkpoint acknowledged by {server_id}.")
+                    checkpoint_socket.close()
+            except Exception as e:
+                printR(f"Failed to send checkpoint to {server_id}: {e}")
 
-
-def handle_checkpoint_requests(sock):
-    """Accept and process checkpoint requests from primary servers."""
-    sock.setblocking(False)
+# Backup synchronization
+def accept_checkpoint_connections(checkpoint_socket):
+    """Accept checkpoints from the primary server."""
+    global state
     while True:
         try:
-            conn, addr = sock.accept()
-            message = receive(conn, f"Primary Server@{addr}")
-            if message and message["message"] == "checkpoint":
-                global state
-                state = message["state"]
-                printP(f"Checkpoint received. Updated state: {state}")
-                send(conn, create_message(COMPONENT_ID, "checkpoint_acknowledgment"), f"Primary Server@{addr}")
-            elif message and message["message"] == "request_state":
-                send(conn, create_message(COMPONENT_ID, "state_response", state=state), f"Primary Server@{addr}")
+            conn, addr = checkpoint_socket.accept()
+            message = receive(conn, "Primary")
+            if message and message.get("message") == "checkpoint":
+                state = message.get("state", state)
+                printG(f"State synchronized to {state} via checkpoint.")
+                acknowledgment = create_message(COMPONENT_ID, "checkpoint_acknowledgment")
+                send(conn, acknowledgment, "Primary")
             conn.close()
-        except BlockingIOError:
-            time.sleep(0.1)
+        except Exception as e:
+            printR(f"Error accepting checkpoint: {e}")
 
+def synchronize_with_primary():
+    """Synchronize state with the primary server."""
+    global state
+    primary_ip, checkpoint_port = get_primary_server_address()
+    try:
+        checkpoint_socket = connect_to_socket(primary_ip, checkpoint_port)
+        if checkpoint_socket:
+            sync_request = create_message(COMPONENT_ID, "request_state")
+            send(checkpoint_socket, sync_request, "Primary")
+            response = receive(checkpoint_socket, "Primary")
+            if response and response.get("message") == "state_response":
+                state = response.get("state", state)
+                printG(f"State synchronized with primary: {state}")
+            checkpoint_socket.close()
+    except Exception as e:
+        printR(f"Failed to synchronize with primary: {e}")
 
+# Main server logic
 def main():
     global role
     determine_role()
 
+    # LFD Connection
     connect_to_lfd()
-    threading.Thread(target=respond_to_heartbeat, daemon=True).start()
 
-    # Client connection socket
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    client_socket.bind((SERVER_IP, CLIENT_PORT))
-    client_socket.listen(5)
-    printG(f"Listening for clients on {SERVER_IP}:{CLIENT_PORT}")
+    # Sockets for client and checkpoint communication
+    client_socket = initialize_component(COMPONENT_ID, "Client Handler", SERVER_IP, SERVER_PORT, 5)
+    checkpoint_socket = initialize_component(COMPONENT_ID, "Checkpoint Handler", SERVER_IP, CHECKPOINT_PORT, 5)
 
-    # Checkpoint socket
-    checkpoint_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    checkpoint_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    checkpoint_socket.bind((SERVER_IP, CHECKPOINT_PORT))
-    checkpoint_socket.listen(5)
-    printG(f"Listening for checkpoints on {SERVER_IP}:{CHECKPOINT_PORT}")
+    # Start accepting client and checkpoint connections
+    threading.Thread(target=accept_client_connections, args=(client_socket,), daemon=True).start()
+    threading.Thread(target=accept_checkpoint_connections, args=(checkpoint_socket,), daemon=True).start()
 
-    threading.Thread(target=handle_client_connections, args=(client_socket,), daemon=True).start()
-    threading.Thread(target=handle_checkpoint_requests, args=(checkpoint_socket,), daemon=True).start()
+    # If backup, synchronize with primary
+    if role == 'backup':
+        synchronize_with_primary()
+
+    # If primary, start checkpointing
+    if role == 'primary':
+        threading.Thread(target=send_checkpoint, daemon=True).start()
 
     try:
         while True:
-            time.sleep(1)  # Keep the main thread alive
+            time.sleep(1)
     except KeyboardInterrupt:
-        printY("Server shutting down...")
+        printY("Server shutting down.")
     finally:
+        for conn in client_connections.keys():
+            conn.close()
         client_socket.close()
         checkpoint_socket.close()
-        if lfd_socket:
-            lfd_socket.close()
         printR("Server terminated.")
 
 if __name__ == "__main__":

@@ -1,114 +1,77 @@
 import socket
-import json
 import time
-
-# Define color functions for printing
-def print_sent(skk): print("\033[96m{}\033[00m".format(skk))  # Cyan for sent messages
-def print_received(skk): print("\033[95m{}\033[00m".format(skk))  # Purple for received messages
-def printR(skk): print("\033[91m{}\033[00m".format(skk))  # Red for errors
-def printY(skk): print("\033[93m{}\033[00m".format(skk))  # Yellow for warnings
-def printG(skk): print("\033[92m{}\033[00m".format(skk))  # Green for registrations
+from communication_utils import create_message, send, receive, printG, printR, printY
 
 # List of server IPs in order of preference
 SERVER_IPS = [
-    '172.26.45.165',  # Primary server IP (S1)
-    '172.26.115.84'   # Backup server IP (S2)
-    # Add more servers if available
+    '127.0.0.1',  # Adjust to actual server IPs
 ]
 
+CLIENT_ID = "C1"
+SERVER_PORT = 12346
+
+
 class Client:
-    def __init__(self, server_port, client_id):
-        self.server_ips = SERVER_IPS
+    def __init__(self, server_ips, server_port, client_id):
+        self.server_ips = server_ips
         self.server_port = server_port
         self.client_id = client_id
+        self.socket = None
+        self.connected_server = None
 
-    def create_message(self, message_type, **kwargs):
-        """Creates a standard message with client_id and timestamp."""
-        return {
-            "client_id": self.client_id,
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "message": message_type,
-            **kwargs
-        }
-
-    def format_message_log(self, message, sender, receiver, sent=True):
-        """Formats the message log for structured printing."""
-        message_type = message.get("message", "Unknown")
-        timestamp = message.get("timestamp", "Unknown")
-        details = {k: v for k, v in message.items() if k not in ["client_id", "timestamp", "message"]}
-        color_fn = print_sent if sent else print_received
-        color_fn("====================================================================")
-        color_fn(f"{sender} → {receiver} ({message_type}) at {timestamp}")
-        if details:
-            for key, value in details.items():
-                color_fn(f"  {key}: {value}")
-        color_fn("====================================================================")
-
-    def attempt_connection(self):
-        """Attempt to connect to servers in order."""
+    def connect_to_server(self):
+        """Connect to a server from the list of IPs."""
         for ip in self.server_ips:
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.connect((ip, self.server_port))
+                self.socket = sock
+                self.connected_server = ip
                 printG(f"Connected to server at {ip}:{self.server_port}")
-                return sock, ip
+                return True
             except Exception as e:
-                printR(f"Failed to connect to server {ip}: {e}")
-                time.sleep(2)  # Wait before trying next server
-        return None, None
+                printR(f"Failed to connect to server {ip}:{self.server_port}: {e}")
+        return False
 
-    def send_message(self, sock, message, receiver):
-        """Sends a message through the provided socket."""
-        try:
-            sock.sendall(json.dumps(message).encode())
-            self.format_message_log(message, self.client_id, receiver, sent=True)
-        except socket.error as e:
-            printR(f"Failed to send message to {receiver}: {e}")
-            sock.close()
-            return False
-        return True
-
-    def receive_message(self, sock, sender):
-        """Receives a message from the provided socket."""
-        try:
-            data = sock.recv(4096).decode()
-            if not data:
-                printR(f"No data received from {sender}.")
-                sock.close()
-                return None
-            message = json.loads(data)
-            self.format_message_log(message, sender, self.client_id, sent=False)
-            return message
-        except (socket.error, json.JSONDecodeError) as e:
-            printR(f"Failed to receive or decode message from {sender}: {e}")
-            sock.close()
-            return None
+    def send_and_receive(self):
+        """Send messages to the server and receive responses."""
+        while self.socket:
+            try:
+                # Example: Send an 'update' message
+                message = create_message(self.client_id, "update")
+                send(self.socket, message, f"Server@{self.connected_server}")
+                
+                response = receive(self.socket, f"Server@{self.connected_server}")
+                if not response:
+                    printR("Server disconnected. Reconnecting...")
+                    self.socket.close()
+                    self.socket = None
+                    break  # Break loop to reconnect
+                time.sleep(2)  # Simulate client request frequency
+            except Exception as e:
+                printR(f"Error during communication: {e}")
+                self.socket.close()
+                self.socket = None
+                break
 
     def run(self):
-        """Main client operation."""
+        """Run the client."""
         while True:
-            sock, server_ip = self.attempt_connection()
-            if sock is None:
-                printR("All servers are unreachable. Retrying in 5 seconds...")
-                time.sleep(5)  # Wait before retrying all servers
-                continue
+            if not self.socket:
+                printY("Attempting to connect to a server...")
+                if not self.connect_to_server():
+                    printR("All servers are unreachable. Retrying in 5 seconds...")
+                    time.sleep(5)
+                    continue
 
-            try:
-                while True:
-                    # Example: Send an 'update' message
-                    message = self.create_message("update")
-                    if not self.send_message(sock, message, f"Server@{server_ip}"):
-                        break  # Connection failed, try next server
+            self.send_and_receive()
 
-                    response = self.receive_message(sock, f"Server@{server_ip}")
-                    if response is None:
-                        break  # Connection failed, try next server
 
-                    # Process response if needed
-                    time.sleep(5)  # Wait before sending next message
-            except Exception as e:
-                printR(f"Error during communication with server {server_ip}: {e}")
-            finally:
-                sock.close()
-                printY(f"Disconnected from server {server_ip}. Retrying other servers...")
-                time.sleep(2)  # Wait before trying next server
+if __name__ == "__main__":
+    client = Client(SERVER_IPS, SERVER_PORT, CLIENT_ID)
+    try:
+        client.run()
+    except KeyboardInterrupt:
+        printY("Client exiting...")
+        if client.socket:
+            client.socket.close()
