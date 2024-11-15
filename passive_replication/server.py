@@ -63,9 +63,48 @@ def handle_heartbeat():
 
 def determine_role():
     """Determine whether the server is primary or backup."""
-    global role
-    role = 'primary' if COMPONENT_ID == PRIMARY_SERVER_ID else 'backup'
-    printG(f"Server {COMPONENT_ID} starting as {role}.")
+    global role, PRIMARY_SERVER_ID
+    for server_id, server_ip in SERVER_IPS.items():
+        if server_id != COMPONENT_ID:
+            try:
+                sock = connect_to_socket(server_ip, CHECKPOINT_PORT, timeout=2)
+                if sock:
+                    # A primary is active
+                    PRIMARY_SERVER_ID = server_id
+                    role = 'backup'
+                    printG(f"Server {COMPONENT_ID} starting as backup. Detected primary: {PRIMARY_SERVER_ID}")
+                    sock.close()
+                    return
+            except:
+                continue
+    # No active primary detected; promote self
+    role = 'primary'
+    PRIMARY_SERVER_ID = COMPONENT_ID
+    printG(f"Server {COMPONENT_ID} starting as primary.")
+
+
+def monitor_primary():
+    """Monitor the health of the primary server and promote if necessary."""
+    global role, PRIMARY_SERVER_ID
+    while role == 'backup':
+        primary_ip = SERVER_IPS[PRIMARY_SERVER_ID]
+        try:
+            sock = connect_to_socket(primary_ip, CHECKPOINT_PORT, timeout=2)
+            if sock:
+                # Successfully connected; primary is alive
+                sock.close()
+                time.sleep(2)  # Check periodically
+            else:
+                raise Exception("Primary unresponsive")
+        except:
+            # Promote self if primary is down
+            with threading.Lock():
+                if role == 'backup':  # Ensure only one backup promotes
+                    role = 'primary'
+                    PRIMARY_SERVER_ID = COMPONENT_ID
+                    printG(f"Server {COMPONENT_ID} promoted to primary.")
+                    threading.Thread(target=send_checkpoint, daemon=True).start()
+                    break
 
 
 def accept_client_connections(server_socket):
@@ -154,7 +193,7 @@ def synchronize_with_primary():
     global state
     primary_ip, checkpoint_port = SERVER_IPS[PRIMARY_SERVER_ID], CHECKPOINT_PORT
     try:
-        checkpoint_socket = connect_to_socket(primary_ip, checkpoint_port)
+        checkpoint_socket = connect_to_socket(primary_ip, checkpoint_port, timeout=5)
         if checkpoint_socket:
             sync_request = create_message(COMPONENT_ID, "request_state")
             send(checkpoint_socket, sync_request, "Primary")
@@ -177,9 +216,9 @@ def main():
 
     threading.Thread(target=accept_client_connections, args=(client_socket,), daemon=True).start()
     threading.Thread(target=accept_checkpoint_connections, args=(checkpoint_socket,), daemon=True).start()
-
     if role == 'backup':
         synchronize_with_primary()
+        threading.Thread(target=monitor_primary, daemon=True).start()
 
     if role == 'primary':
         threading.Thread(target=send_checkpoint, daemon=True).start()
@@ -200,3 +239,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
