@@ -36,7 +36,6 @@ def receive(sock, receiver):
         print_log(message, receiver, sent=False)
         return message
     except (socket.error, json.JSONDecodeError) as e:
-        printR("Failed to receive message.")
         return None
 
 def print_log(message, receiver, sent=True):
