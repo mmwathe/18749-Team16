@@ -1,6 +1,5 @@
 import socket
 import time
-import json
 import argparse
 import threading
 import os
@@ -10,7 +9,7 @@ from communication_utils import *
 COMPONENT_ID = os.environ.get("MY_LFD_ID")
 LFD_IP = '127.0.0.1'
 LFD_PORT = 54321
-GFD_IP = '0.0.0.0'
+GFD_IP = os.environ.get("GFD_IP")
 GFD_PORT = 12345
 heartbeat_interval = 4
 timeout_threshold = 10  # Time in seconds to wait for a response before marking server as "dead"
@@ -72,11 +71,14 @@ def connect_to_gfd():
 
 def receive_heartbeat_from_gfd():
     while True:
-        if gfd_socket:
-            message = receive(gfd_socket, COMPONENT_ID)
-            if message and message.get("message") == "heartbeat":
-                heartbeat_acknowledgement = create_message(COMPONENT_ID, "heartbeat acknowledgment")
-                send(gfd_socket, heartbeat_acknowledgement, "GFD")
+        try:
+            if gfd_socket:
+                message = receive(gfd_socket, COMPONENT_ID)
+                if message and message.get("message") == "heartbeat":
+                    heartbeat_acknowledgement = create_message(COMPONENT_ID, "heartbeat acknowledgment")
+                    send(gfd_socket, heartbeat_acknowledgement, "GFD")
+        except Exception as e:
+            printR(f"Error heartbeating with GFD: {e}")
 
 def main():
     global heartbeat_interval
