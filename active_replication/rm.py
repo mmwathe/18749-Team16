@@ -42,7 +42,7 @@ def main():
             conn, addr = rm_socket.accept()
             printG(f"Connected to GFD at {addr}")
             while True:
-                message = receive(conn, "GFD", COMPONENT_ID)
+                message = receive(conn, COMPONENT_ID)
                 if not message:
                     printR("GFD disconnected.")
                     break

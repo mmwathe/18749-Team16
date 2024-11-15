@@ -17,7 +17,7 @@ def register_with_rm(rm_ip, rm_port):
         rm_socket = connect_to_socket(rm_ip, rm_port)
         if rm_socket:
             message = create_message(COMPONENT_ID, "register", member_count=member_count)
-            send(rm_socket, message, COMPONENT_ID, "RM")
+            send(rm_socket, message, "RM")
             printP(f"GFD registered with RM: {member_count} members")
     except socket.error as e:
         printR(f"Failed to register with RM: {e}")
@@ -25,7 +25,7 @@ def register_with_rm(rm_ip, rm_port):
 def handle_lfd_connection(conn, addr):
     try:
         # Receive the initial registration message from the LFD
-        message = receive(conn, "LFD", COMPONENT_ID)
+        message = receive(conn, COMPONENT_ID)
 
         # Retrieve and print the component_id from the LFD's registration message
         component_id = message.get("component_id", "Unknown")
@@ -34,7 +34,7 @@ def handle_lfd_connection(conn, addr):
 
         # Handle further messages from this LFD in a loop
         while True:
-            message = receive(conn, component_id, COMPONENT_ID)
+            message = receive(conn, COMPONENT_ID)
             if not message:
                 printR(f"LFD at {addr} disconnected.")
                 break
@@ -74,7 +74,7 @@ def send_heartbeat_continuously(conn, addr, component_id):
     while True:
         try:
             message = create_message(COMPONENT_ID, "heartbeat")
-            send(conn, message, COMPONENT_ID, component_id)
+            send(conn, message, component_id)
             time.sleep(heartbeat_interval)
         except socket.error as e:
             printR(f"Failed to send heartbeat to LFD at {addr}: {e}")
@@ -108,7 +108,7 @@ def send_update_to_rm():
     global rm_socket, member_count
     if rm_socket:
         update_membership = create_message(COMPONENT_ID, "update_membership", member_count=member_count)
-        send(rm_socket, update_membership, COMPONENT_ID, "RM")
+        send(rm_socket, update_membership, "RM")
         printG(f"Sent updated membership count to RM: {member_count}")
     else:
         printR("No active connection to RM.")
