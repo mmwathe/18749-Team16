@@ -19,6 +19,7 @@ gfd_socket = None
 server_socket = None
 
 def handle_server_registration():
+    global c, SERVER_ID
     message = receive(server_socket, COMPONENT_ID)
     if message and message.get('message') == 'register':
         SERVER_ID = message.get('component_id', 'Unknown Server')
