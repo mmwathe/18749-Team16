@@ -1,17 +1,10 @@
 import socket
 import time
-from queue import Queue, Empty
+from queue import Queue
 import threading
 import os
 import errno
-from communication_utils import create_message, send, receive, print_log, connect_to_socket
-
-# Define color functions for printing with enhanced formatting
-def print_registration(skk): print(f"\033[92m{skk}\033[00m")  # Green for registrations and accepted connections
-def print_disconnection(skk): print(f"\033[91m{skk}\033[00m")  # Red for disconnections or errors
-def print_warning(skk): print(f"\033[93m{skk}\033[00m")  # Yellow for warnings or waiting
-def print_sent(skk): print(f"\033[96m{skk}\033[00m")  # Cyan for sent messages
-def print_received(skk): print(f"\033[95m{skk}\033[00m")  # Purple for received messages
+from communication_utils import *
 
 # Global Configurations
 COMPONENT_ID = os.environ.get("MY_SERVER_ID")
@@ -35,11 +28,11 @@ def connect_to_lfd():
     try:
         lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         lfd_socket.connect((LFD_IP, LFD_PORT))
-        print_registration(f"Connected to LFD at {LFD_IP}:{LFD_PORT}")
+        printG(f"Connected to LFD at {LFD_IP}:{LFD_PORT}")
         registration_message = create_message(COMPONENT_ID, "register")
         send(lfd_socket, registration_message, LFD_ID)
     except Exception as e:
-        print_disconnection(f"Failed to connect to LFD: {e}")
+        printR(f"Failed to connect to LFD: {e}")
         lfd_socket = None
 
 def handle_heartbeat():
@@ -63,7 +56,7 @@ def accept_new_connections_reliable(server_socket):
     # Non-blocking mode
     try:
         client_socket, client_address = server_socket.accept()
-        print_registration(f"Connection established: {client_address}")
+        printG(f"Connection established: {client_address}")
         # Handle request_state message if received
         message = receive(client_socket, COMPONENT_ID)
         if message and message.get("message") == "request_state":
@@ -73,7 +66,7 @@ def accept_new_connections_reliable(server_socket):
     except BlockingIOError:
         pass
     except Exception as e:
-        print_disconnection(f"Error accepting client connection: {e}")
+        printR(f"Error accepting client connection: {e}")
     server_socket.setblocking(False)
 
 def accept_new_connections(server_socket):
@@ -81,13 +74,13 @@ def accept_new_connections(server_socket):
     server_socket.setblocking(False)  # Set the socket to non-blocking mode
     try:
         client_socket, client_address = server_socket.accept()
-        print_registration(f"Client connected: {client_address}")
+        printG(f"Client connected: {client_address}")
         clients[client_socket] = client_address
     except BlockingIOError:
         # No new connections, move on
         pass
     except Exception as e:
-        print_disconnection(f"Error accepting client connection: {e}")
+        printR(f"Error accepting client connection: {e}")
 
 def process_client_messages():
     """Processes messages from connected clients and handles responses."""
@@ -112,7 +105,7 @@ def process_client_messages():
             # No data available for now; skip processing this socket
             continue
         except Exception as e:
-            print_disconnection(f"Error processing client message: {e}")
+            printR(f"Error processing client message: {e}")
             disconnect_client(client_socket)
 
 def synchronize_state():
@@ -122,7 +115,7 @@ def synchronize_state():
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(3)  # Set a strict timeout for the connection
         sock.connect((RELIABLE_SERVER_IP, RELIABLE_SERVER_PORT))
-        print_registration(f"Connected to reliable server at {RELIABLE_SERVER_IP}:{RELIABLE_SERVER_PORT}")
+        printG(f"Connected to reliable server at {RELIABLE_SERVER_IP}:{RELIABLE_SERVER_PORT}")
 
         # Send request_state message
         request_message = create_message(COMPONENT_ID, "request_state")
@@ -133,18 +126,18 @@ def synchronize_state():
         response = receive(sock, COMPONENT_ID)
         if response and response.get("message") == "state_response":
             state = response.get("state", state)
-            print_registration(f"State synchronized with reliable server. New state: {state}")
+            printG(f"State synchronized with reliable server. New state: {state}")
         else:
-            print_warning("No valid state response received from reliable server.")
+            printY("No valid state response received from reliable server.")
     except socket.timeout:
-        print_warning("Synchronization timed out while waiting for the reliable server.")
+        printY("Synchronization timed out while waiting for the reliable server.")
     except socket.error as e:
         if e.errno in (errno.ECONNREFUSED, errno.ETIMEDOUT):
-            print_warning("Reliable server unavailable. Skipping synchronization.")
+            printY("Reliable server unavailable. Skipping synchronization.")
         else:
-            print_disconnection(f"Socket error during synchronization: {e}")
+            printR(f"Socket error during synchronization: {e}")
     except Exception as e:
-        print_disconnection(f"Failed to synchronize with reliable server: {e}")
+        printR(f"Failed to synchronize with reliable server: {e}")
     finally:
         sock.close() 
 
@@ -155,15 +148,15 @@ def flush_message_queue():
             client_socket, response = message_queue.get_nowait()
             send(client_socket, response, f"Client@{clients[client_socket]}")
         except KeyError:
-            print_disconnection("Attempted to send message to a disconnected client.")
+            printR("Attempted to send message to a disconnected client.")
         except Exception as e:
-            print_disconnection(f"Error sending message from queue: {e}")
+            printR(f"Error sending message from queue: {e}")
 
 def disconnect_client(client_socket):
     """Disconnects a client and removes it from the active clients list."""
     client_address = clients.pop(client_socket, None)
     if client_address:
-        print_disconnection(f"Client disconnected: {client_address}")
+        printR(f"Client disconnected: {client_address}")
     client_socket.close()
 
 def main():
@@ -176,7 +169,7 @@ def main():
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_socket.bind((SERVER_IP, SERVER_PORT))
     server_socket.listen(5)
-    print_registration(f"Server listening on {SERVER_IP}:{SERVER_PORT}")
+    printG(f"Server listening on {SERVER_IP}:{SERVER_PORT}")
 
     if (isReliableServer):
         server_socket2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -195,13 +188,13 @@ def main():
             flush_message_queue()  # Send responses to clients
             time.sleep(0.1)  # Prevent high CPU usage
     except KeyboardInterrupt:
-        print_warning("Server shutting down.")
+        printY("Server shutting down.")
     finally:
         if lfd_socket:
             lfd_socket.close()
         for client in list(clients.keys()):
             disconnect_client(client)
         server_socket.close()
-        print_disconnection("Server terminated.")
+        printR("Server terminated.")
 if __name__ == '__main__':
     main()

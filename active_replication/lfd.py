@@ -19,6 +19,7 @@ gfd_socket = None
 server_socket = None
 
 def handle_server_registration():
+    global c, SERVER_ID
     message = receive(server_socket, COMPONENT_ID)
     if message and message.get('message') == 'register':
         SERVER_ID = message.get('component_id', 'Unknown Server')
@@ -70,13 +71,13 @@ def connect_to_gfd():
         printR(f"Failed to connect to GFD: {e}")
 
 def receive_heartbeat_from_gfd():
-    while True:
         try:
-            if gfd_socket:
-                message = receive(gfd_socket, COMPONENT_ID)
-                if message and message.get("message") == "heartbeat":
-                    heartbeat_acknowledgement = create_message(COMPONENT_ID, "heartbeat acknowledgment")
-                    send(gfd_socket, heartbeat_acknowledgement, "GFD")
+            while True:
+                if gfd_socket:
+                    message = receive(gfd_socket, COMPONENT_ID)
+                    if message and message.get("message") == "heartbeat":
+                        heartbeat_acknowledgement = create_message(COMPONENT_ID, "heartbeat acknowledgment")
+                        send(gfd_socket, heartbeat_acknowledgement, "GFD")
         except Exception as e:
             printR(f"Error heartbeating with GFD: {e}")
 
