@@ -19,32 +19,31 @@ def create_message(component_id, message_type, **kwargs):
         **kwargs
     }
 
-def send(sock, message, sender, receiver):
+def send(sock, message, receiver):
     """Sends a message through the provided socket."""
     try:
         sock.sendall(json.dumps(message).encode())
-        print_log(message, sender, receiver, sent=True)
+        print_log(message, receiver, sent=True)
     except socket.error as e:
         print(f"\033[91mFailed to send message to {receiver}: {e}\033[00m")
 
-def receive(sock, sender, receiver):
-    """Receives a message from the provided socket."""
+def receive(sock, receiver):
     try:
         data = sock.recv(1024).decode()
         if not data:
-            print(f"\033[93mConnection closed by {sender}.\033[00m")  # Yellow for warnings
             return None
         message = json.loads(data)
-        print_log(message, sender, receiver, sent=False)
+        print_log(message, receiver, sent=False)
         return message
     except (socket.error, json.JSONDecodeError) as e:
-        print(f"\033[91mFailed to receive or decode message from {sender}: {e}\033[00m")  # Red for errors
+        printR("Failed to receive message.")
         return None
 
-def print_log(message, sender, receiver, sent=True):
+def print_log(message, receiver, sent=True):
     """Formats and prints log messages consistently."""
     message_type = message.get("message", "Unknown")
     timestamp = message.get("timestamp", "Unknown")
+    sender = message.get("component_id", "Unknown")
     details = {k: v for k, v in message.items() if k not in ["component_id", "timestamp", "message"]}
     color = "\033[96m" if sent else "\033[95m"  # Cyan for sent, Purple for received
     reset = "\033[00m"

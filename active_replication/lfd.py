@@ -1,6 +1,5 @@
 import socket
 import time
-import json
 import argparse
 import threading
 import os
@@ -14,55 +13,44 @@ GFD_IP = os.environ.get("GFD_IP")
 GFD_PORT = 12345
 heartbeat_interval = 4
 timeout_threshold = 10  # Time in seconds to wait for a response before marking server as "dead"
+
+SERVER_ID = None
 gfd_socket = None
 server_socket = None
-server_id = None
-
-def register_with_gfd():
-    """Registers LFD with GFD."""
-    if gfd_socket:
-        message = create_message(COMPONENT_ID, "register")
-        send(gfd_socket, message, COMPONENT_ID, "GFD")
 
 def handle_server_registration():
-    """Processes the server registration message."""
-    global server_id
-    message = receive(server_socket, "Server", COMPONENT_ID)
+    message = receive(server_socket, COMPONENT_ID)
     if message and message.get('message') == 'register':
-        server_id = message.get('component_id', 'Unknown Server')
-        printG(f"Server {server_id} registered with LFD.")
-        notify_gfd("add replica", {"server_id": server_id})
+        SERVER_ID = message.get('component_id', 'Unknown Server')
+        printG(f"Server {SERVER_ID} registered with LFD.")
+        response = create_message(COMPONENT_ID, "add replica", message_data=SERVER_ID)
+        send(gfd_socket, response, "GFD")
 
 def handle_server_communication():
-    """Handles ongoing server communication, including heartbeats."""
     global server_socket
+    heartbeat_message = create_message(COMPONENT_ID, "heartbeat")
     while True:
-        send(server_socket, create_message(COMPONENT_ID, "heartbeat"), COMPONENT_ID, server_id)
-        response = receive(server_socket, server_id, COMPONENT_ID)
+        send(server_socket, heartbeat_message, SERVER_ID)
+        response = receive(server_socket, COMPONENT_ID)
         if not response:
-            printR(f"Server {server_id} is unresponsive. Marking as dead and notifying GFD.")
-            notify_gfd("remove replica", {"server_id": server_id})
+            printR(f"Server {SERVER_ID} is unresponsive. Marking as dead and notifying GFD.")
+            message = create_message(COMPONENT_ID, "remove replica", message_data=SERVER_ID)
+            send(gfd_socket, message, "GFD")
             server_socket.close()
             break
         time.sleep(heartbeat_interval)
 
-def connect_to_gfd():
-    """Establishes a persistent connection to the GFD and sends registration."""
-    global gfd_socket
-    gfd_socket = connect_to_socket(GFD_IP, GFD_PORT)
-    if gfd_socket:
-        printG(f"Connected to GFD at {GFD_IP}:{GFD_PORT}")
-        register_with_gfd()
-
-def notify_gfd(event_type, event_data):
-    """Sends a notification message to GFD."""
-    if gfd_socket:
-        message = create_message(COMPONENT_ID, event_type, message_data=event_data)
-        send(gfd_socket, message, COMPONENT_ID, "GFD")
+def wait_for_server():
+    global server_socket
+    server_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_listener.bind((LFD_IP, LFD_PORT))
+    server_listener.listen(1)
+    printY(f"LFD listening for server connections on {LFD_IP}:{LFD_PORT}...")
 
     while True:
         try:
-            server_socket, server_address = server_socket.accept()
+            server_socket, server_address = server_listener.accept()
             printG(f"Server connected from {server_address}")
             handle_server_registration()
             handle_server_communication()
@@ -70,19 +58,24 @@ def notify_gfd(event_type, event_data):
             printR(f"Error handling server connection: {e}")
             break
 
-def heartbeat_thread():
-    """Continuously sends heartbeats to GFD."""
-    while True:
-        receive_heartbeat_from_gfd()
-        time.sleep(0.5)
+def connect_to_gfd():
+    global gfd_socket
+    try:
+        gfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        gfd_socket.connect((GFD_IP, GFD_PORT))
+        printG(f"Connected to GFD at {GFD_IP}:{GFD_PORT}")
+        registration_message = create_message(COMPONENT_ID, "register")
+        send(gfd_socket, registration_message, "GFD")
+    except Exception as e:
+        printR(f"Failed to connect to GFD: {e}")
 
 def receive_heartbeat_from_gfd():
-    """Handles heartbeat messages from GFD."""
-    if gfd_socket:
-        message = receive(gfd_socket, "GFD", COMPONENT_ID)
-        if message and message.get("message") == "heartbeat":
-            acknowledgment = create_message(COMPONENT_ID, "heartbeat acknowledgment")
-            send(gfd_socket, acknowledgment, COMPONENT_ID, "GFD")
+    while True:
+        if gfd_socket:
+            message = receive(gfd_socket, COMPONENT_ID)
+            if message and message.get("message") == "heartbeat":
+                heartbeat_acknowledgement = create_message(COMPONENT_ID, "heartbeat acknowledgment")
+                send(gfd_socket, heartbeat_acknowledgement, "GFD")
 
 def main():
     global heartbeat_interval
@@ -91,21 +84,21 @@ def main():
     args = parser.parse_args()
     heartbeat_interval = args.heartbeat_freq
 
-    server_socket = initialize_component(COMPONENT_ID, "Local Fault Detector", LFD_IP, LFD_PORT, 1)
-
     connect_to_gfd()
 
-    heartbeat = threading.Thread(target=heartbeat_thread, daemon=True)
-    heartbeat.start()
+    server_thread = threading.Thread(target=receive_heartbeat_from_gfd, daemon=True)
+    server_thread.start()
 
     try:
         while True:
-            time.sleep(1)
+            wait_for_server()
+            time.sleep(0.5)
     except KeyboardInterrupt:
         printY("LFD interrupted by user.")
     finally:
         if server_socket:
-            notify_gfd("remove replica", {"server_id": server_id, "reason": "LFD shutting down"})
+            message = create_message(COMPONENT_ID, "remove replica", message_data=SERVER_ID)
+            send(gfd_socket, message, "GFD")
             server_socket.close()
         if gfd_socket:
             gfd_socket.close()
