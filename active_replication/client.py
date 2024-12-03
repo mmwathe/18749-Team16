@@ -19,7 +19,7 @@ class Client:
         self.sockets = {}
         self.request_number = 0
         self.server_responses = defaultdict(list)
-        self.seen_states = set()
+        # self.seen_states = set()
 
     def connect(self):
         """Establish connections to all servers."""
@@ -51,10 +51,11 @@ class Client:
             except Exception as e:
                 printR(f"Error sending to server {ip}: {e}")
                 self.sockets.pop(ip)
+        self.request_number += 1
 
     def receive_from_all_servers(self):
         """Receive responses from all servers and detect duplicate states."""
-        global seen_states
+        # global seen_states
         responses = []
         for ip, sock in list(self.sockets.items()):
             try:
@@ -62,13 +63,14 @@ class Client:
                 if response:
                     state = response.get("state")
                     server_id = response.get("component_id")
+                    request_num = response.get("request_number")
 
-                    if state in self.seen_states:
+                    if request_num in self.server_responses:
                         printY(f"request_num {state}: Discarded duplicate reply from {server_id}.")
                     else:
                         print_log(response, self.client_id, sent=False)
-                        self.seen_states.add(state)
                         responses.append((ip, response))
+                    self.server_responses[request_num].append((ip, response))
             except Exception as e:
                 printR(f"Error receiving from server {ip}: {e}")
                 self.sockets.pop(ip)

@@ -94,11 +94,12 @@ def process_client_messages():
             if not message:  # If no message is received, skip further processing
                 continue
             message_type = message.get("message", "unknown")
+            request_number = message.get("request_number", "unknown")
             if message_type == "ping":
                 response = create_message(COMPONENT_ID, "pong")
             elif message_type == "update":
                 state += 1
-                response = create_message(COMPONENT_ID, "state updated", state=state)
+                response = create_message(COMPONENT_ID, "state updated", state=state, request_number=request_number)
             else:
                 response = create_message(COMPONENT_ID, "unknown command")
             # Add the response to the queue
