@@ -19,7 +19,6 @@ class Client:
         self.sockets = {}
         self.request_number = 0
         self.server_responses = defaultdict(list)
-        # self.seen_states = set()
 
     def connect(self):
         """Establish connections to all servers."""
@@ -55,7 +54,6 @@ class Client:
 
     def receive_from_all_servers(self):
         """Receive responses from all servers and detect duplicate states."""
-        # global seen_states
         responses = []
         for ip, sock in list(self.sockets.items()):
             try:
