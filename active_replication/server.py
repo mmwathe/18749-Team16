@@ -2,8 +2,9 @@ import socket
 import time
 from queue import Queue
 import threading
-import os
+import os, sys
 import errno
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
 from communication_utils import *
 from dotenv import load_dotenv
 
