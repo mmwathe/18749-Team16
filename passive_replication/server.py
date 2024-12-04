@@ -17,10 +17,11 @@ PRIMARY_SERVER_ID = 'S1'  # Primary server starts as S1
 
 SERVER_IDS = ['S1', 'S2', 'S3']
 SERVER_IPS = {
-    'S1': os.environ.get("S1"),
-    'S2': os.environ.get("S2"),
-    'S3': os.environ.get("S3"),
+    'S1': '172.26.115.175',
+    'S2': '172.26.2.232',
+    'S3': '172.26.117.255',
 }
+
 CHECKPOINT_INTERVAL = 10
 LFD_IP = '127.0.0.1'
 LFD_PORT = 54321
@@ -38,6 +39,7 @@ def connect_to_lfd():
     while not lfd_socket:
         try:
             lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            lfd_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             lfd_socket.connect((LFD_IP, LFD_PORT))
             printG(f"Connected to LFD at {LFD_IP}:{LFD_PORT}")
             registration_message = create_message(COMPONENT_ID, "register")
@@ -66,7 +68,7 @@ def determine_role():
     """Determine whether the server is primary or backup."""
     global role, PRIMARY_SERVER_ID
     for server_id, server_ip in SERVER_IPS.items():
-        if server_id != COMPONENT_ID:
+        if server_id != COMPONENT_ID: # Skip self
             try:
                 sock = connect_to_socket(server_ip, CHECKPOINT_PORT, timeout=2)
                 if sock:
@@ -82,7 +84,6 @@ def determine_role():
     role = 'primary'
     PRIMARY_SERVER_ID = COMPONENT_ID
     printG(f"Server {COMPONENT_ID} starting as primary.")
-
 
 def monitor_primary():
     """Monitor the health of the primary server and promote if necessary."""
