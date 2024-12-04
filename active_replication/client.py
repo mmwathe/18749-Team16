@@ -1,7 +1,5 @@
 from collections import defaultdict
-import os, sys
-
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
+import os
 from communication_utils import *
 
 S1 = os.environ.get("S1")

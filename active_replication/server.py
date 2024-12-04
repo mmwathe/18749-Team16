@@ -2,11 +2,12 @@ import socket
 import time
 from queue import Queue
 import threading
-import os, sys
+import os
 import errno
-
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
 from communication_utils import *
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Global Configurations
 COMPONENT_ID = os.environ.get("MY_SERVER_ID")
