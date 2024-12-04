@@ -70,11 +70,11 @@ def handle_rm_message(message):
     action = message.get("message", "")
     server_id = message.get("server_id", "")
     if action == "recover_server" and server_id:
-        lfd_connection = lfd_connections.get(f"LFD_{server_id}")
+        lfd_connection = lfd_connections.get(f"LFD{server_id[-1]}")
         if lfd_connection:
             try:
                 recovery_message = create_message(COMPONENT_ID, "recover_server", server_id=server_id)
-                send(lfd_connection, recovery_message, f"LFD_{server_id}")
+                send(lfd_connection, recovery_message, f"LFD{server_id[-1]}")
                 printG(f"Forwarded recovery message to LFD for server {server_id}")
             except socket.error as e:
                 printR(f"Failed to forward recovery message to LFD for server {server_id}: {e}")

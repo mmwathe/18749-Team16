@@ -42,7 +42,6 @@ def handle_server_communication():
             message = create_message(COMPONENT_ID, "remove replica", message_data=SERVER_ID)
             send(gfd_socket, message, "GFD")
             server_socket.close()
-            begin_automated_recovery()
             break
         time.sleep(heartbeat_interval)
 
