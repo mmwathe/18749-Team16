@@ -116,8 +116,8 @@ def accept_client_connections(server_socket):
             printG(f"Client connected: {client_address}")
             with client_lock:
                 clients[client_socket] = client_address
-            if role == 'primary':
-                threading.Thread(target=handle_client_requests, args=(client_socket,), daemon=True).start()
+            # if role == 'primary':
+            threading.Thread(target=handle_client_requests, args=(client_socket,), daemon=True).start()
         except Exception as e:
             printR(f"Error accepting client connections: {e}")
 
@@ -126,7 +126,7 @@ def handle_client_requests(client_socket):
     """Handle client requests if primary."""
     global state
     try:
-        while True:
+        while role == 'primary':
             message = receive(client_socket, COMPONENT_ID)
             if not message:
                 printY("Client disconnected.")
