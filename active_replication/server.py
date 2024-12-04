@@ -164,7 +164,21 @@ def disconnect_client(client_socket):
         printR(f"Client disconnected: {client_address}")
     client_socket.close()
 
+def graceful_shutdown():
+    global running
+    running = False
+    printY("Server shutting down.")
+    if lfd_socket:
+        try:
+            # Notify LFD about shutdown
+            shutdown_msg = create_message(COMPONENT_ID, "shutdown")
+            send(lfd_socket, shutdown_msg, LFD_ID)
+        except Exception as e:
+            printR(f"Error sending shutdown notification: {e}")
+
 def main():
+    global running
+    running = True
     isReliableServer = COMPONENT_ID == "S1"
     
     connect_to_lfd()
@@ -186,14 +200,14 @@ def main():
     threading.Thread(target=handle_heartbeat, daemon=True).start()
 
     try:
-        while True:
+        while running:
             accept_new_connections(server_socket)  # Non-blocking, checks for connections
             process_client_messages()  # Process any client messages
             if (isReliableServer): accept_new_connections_reliable(server_socket2)
             flush_message_queue()  # Send responses to clients
             time.sleep(0.1)  # Prevent high CPU usage
     except KeyboardInterrupt:
-        printY("Server shutting down.")
+        graceful_shutdown()
     finally:
         if lfd_socket:
             lfd_socket.close()
