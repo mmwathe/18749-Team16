@@ -38,11 +38,20 @@ def handle_server_communication():
         response = receive(server_socket, COMPONENT_ID)
         if not response:
             printR(f"Server {SERVER_ID} is unresponsive. Marking as dead and notifying GFD.")
-            message = create_message(COMPONENT_ID, "remove replica", message_data=SERVER_ID)
-            send(gfd_socket, message, "GFD")
+            notify_gfd_remove_replica()
+            server_socket.close()
+            break
+        elif response.get("message") == 'shutdown':
+            printY(f"Server {SERVER_ID} is shutting down. Notifying GFD.")
+            notify_gfd_remove_replica()
             server_socket.close()
             break
         time.sleep(heartbeat_interval)
+
+def notify_gfd_remove_replica():
+    global gfd_socket, SERVER_ID
+    message = create_message(COMPONENT_ID, "remove replica", message_data=SERVER_ID)
+    send(gfd_socket, message, "GFD")
 
 def wait_for_server():
     global server_socket
@@ -104,8 +113,7 @@ def main():
         printY("LFD interrupted by user.")
     finally:
         if server_socket:
-            message = create_message(COMPONENT_ID, "remove replica", message_data=SERVER_ID)
-            send(gfd_socket, message, "GFD")
+            notify_gfd_remove_replica()
             server_socket.close()
         if gfd_socket:
             gfd_socket.close()
