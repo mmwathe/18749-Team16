@@ -21,6 +21,7 @@ class Client:
         self.client_id = client_id
         self.socket = None
         self.connected_server = None
+        self.request_number = 0
 
     def connect_to_server(self):
         """Connect to a server from the list of IPs."""
@@ -41,8 +42,9 @@ class Client:
         while self.socket:
             try:
                 # Example: Send an 'update' message
-                message = create_message(self.client_id, "update")
+                message = create_message(self.client_id, "update", request_number=self.request_number)
                 send(self.socket, message, f"Server@{self.connected_server}")
+                self.request_number += 1
                 
                 response = receive(self.socket, f"Server@{self.connected_server}")
                 if not response:
