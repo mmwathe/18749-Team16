@@ -126,7 +126,9 @@ def handle_client_requests(client_socket):
     """Handle client requests if primary."""
     global state
     try:
-        while role == 'primary':
+        while True:
+            if role != 'primary': # Only primary handles client requests
+                continue
             message = receive(client_socket, COMPONENT_ID)
             if not message:
                 printY("Client disconnected.")
