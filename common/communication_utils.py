@@ -50,7 +50,7 @@ def print_log(message, receiver, sent=True):
     color = "\033[96m" if sent else "\033[95m"  # Cyan for sent, Purple for received
     reset = "\033[00m"
     
-    print(f"{color}{sender} \u2192 {receiver} ({message_type}) at {timestamp}{reset}")
+    print(f"{color}{timestamp}: {sender} \u2192 {receiver} ({message_type}){reset}")
     if details:
         for key, value in details.items():
             print(f"{color}  {key}: {value}{reset}")
