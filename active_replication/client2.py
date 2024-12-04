@@ -1,6 +1,9 @@
-import time
-from communication_utils import *
+import time, sys, os
 from client import Client
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
+from communication_utils import *
+
 
 def main():
     CLIENT_ID = 'C2'

@@ -1,6 +1,9 @@
-import time
-from communication_utils import *
+import time, sys, os
 from client import Client
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
+from communication_utils import *
+
 
 def main():
     CLIENT_ID = 'C1'
@@ -16,7 +19,7 @@ def main():
             client.reconnect()
 
             # Send an update message and process responses
-            client.send_to_all_servers("update")
+            client.send_to_all_servers("update", request_number=client.request_number)
             client.receive_from_all_servers()
 
             time.sleep(2)  # Delay between requests
