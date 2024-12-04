@@ -52,7 +52,7 @@ def handle_lfd_connection(conn, addr):
         conn.close()
         lfd_connections.pop(component_id, None)  # Remove the LFD connection on disconnect
 
-def handle_lfd_message(component_id, message):
+def handle_lfd_message(message):
     action = message.get("message", "")
     server_id = message.get("message_data", "")
     if action == "add replica" and server_id:
@@ -104,9 +104,9 @@ def add_replica(replica_id):
         if replica_id not in membership:
             membership[replica_id] = time.time()
             member_count += 1
-            printLP(f"Replica '{replica_id}' added to membership.")
+            printG(f"Replica '{replica_id}' added to membership.")
             print_membership()
-            send_update_to_rm()
+            send_update_to_rm(replica_id)
 
 def delete_replica(server_id):
     """Removes a replica from the membership and notifies RM."""
@@ -119,7 +119,7 @@ def delete_replica(server_id):
             print_membership()
             send_update_to_rm(server_id)
 
-def send_update_to_rm(server_id=None):
+def send_update_to_rm(server_id):
     """Sends updated membership count to RM."""
     global rm_socket, member_count
     if rm_socket:

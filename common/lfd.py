@@ -50,14 +50,13 @@ def begin_automated_recovery():
     global server_socket, SERVER_ID
 
     # Full path to the server script
-    python_executable = os.environ.get("PYTHON_EXECUTABLE")
     server_script_path = os.environ.get("SERVER_SCRIPT_PATH")
 
     try:
         # Use osascript to open a new Terminal window and run the command
         subprocess.Popen([
             "osascript", "-e",
-            f'tell application "Terminal" to do script "{python_executable} {server_script_path}"'
+            f'tell application "Terminal" to do script "{server_script_path}"'
         ])
     except Exception as e:
         printR(f"Failed to relaunch server {SERVER_ID}: {e}")
