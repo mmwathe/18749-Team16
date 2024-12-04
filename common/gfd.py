@@ -66,24 +66,20 @@ def handle_lfd_message(message):
 
 def handle_rm_message(message):
     """Handles messages from the RM."""
+    global lfd_connections
     action = message.get("message", "")
     server_id = message.get("server_id", "")
-    if action == "recovery_in_progress" and server_id:
-        forward_recovery_to_lfd(server_id)
-
-def forward_recovery_to_lfd(server_id):
-    """Forwards recovery message to the corresponding LFD."""
-    global lfd_connections
-    lfd_connection = lfd_connections.get(f"LFD_{server_id}")
-    if lfd_connection:
-        try:
-            recovery_message = create_message(COMPONENT_ID, "recover_server", server_id=server_id)
-            send(lfd_connection, recovery_message, f"LFD_{server_id}")
-            printG(f"Forwarded recovery message to LFD for server {server_id}")
-        except socket.error as e:
-            printR(f"Failed to forward recovery message to LFD for server {server_id}: {e}")
-    else:
-        printR(f"No LFD found for server {server_id}. Recovery message not sent.")
+    if action == "recover_server" and server_id:
+        lfd_connection = lfd_connections.get(f"LFD_{server_id}")
+        if lfd_connection:
+            try:
+                recovery_message = create_message(COMPONENT_ID, "recover_server", server_id=server_id)
+                send(lfd_connection, recovery_message, f"LFD_{server_id}")
+                printG(f"Forwarded recovery message to LFD for server {server_id}")
+            except socket.error as e:
+                printR(f"Failed to forward recovery message to LFD for server {server_id}: {e}")
+        else:
+            printR(f"No LFD found for server {server_id}. Recovery message not sent.")
 
 def send_heartbeat_continuously(conn, addr, component_id):
     """Sends heartbeat messages continuously to an LFD."""

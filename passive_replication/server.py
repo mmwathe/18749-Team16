@@ -99,14 +99,20 @@ def monitor_primary():
             else:
                 raise Exception("Primary unresponsive")
         except:
+            time.sleep(1)
+            sock = connect_to_socket(primary_ip, CHECKPOINT_PORT, timeout=2)
+            if sock:
+                # Successfully connected; primary is alive
+                sock.close()
+            else:
             # Promote self if primary is down
-            with threading.Lock():
-                if role == 'backup':  # Ensure only one backup promotes
-                    role = 'primary'
-                    PRIMARY_SERVER_ID = COMPONENT_ID
-                    printG(f"Server {COMPONENT_ID} promoted to primary.")
-                    threading.Thread(target=send_checkpoint, daemon=True).start()
-                    break
+                with threading.Lock():
+                    if role == 'backup':  # Ensure only one backup promotes
+                        role = 'primary'
+                        PRIMARY_SERVER_ID = COMPONENT_ID
+                        printG(f"Server {COMPONENT_ID} promoted to primary.")
+                        threading.Thread(target=send_checkpoint, daemon=True).start()
+                        break
 
 
 def accept_client_connections(server_socket):
