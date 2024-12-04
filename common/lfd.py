@@ -3,6 +3,7 @@ import time
 import argparse
 import threading
 import os
+import subprocess
 from communication_utils import *
 from dotenv import load_dotenv
 
@@ -41,8 +42,25 @@ def handle_server_communication():
             message = create_message(COMPONENT_ID, "remove replica", message_data=SERVER_ID)
             send(gfd_socket, message, "GFD")
             server_socket.close()
+            begin_automated_recovery()
             break
         time.sleep(heartbeat_interval)
+
+def begin_automated_recovery():
+    global server_socket, SERVER_ID
+
+    # Full path to the server script
+    python_executable = os.environ.get("PYTHON_EXECUTABLE")
+    server_script_path = os.environ.get("SERVER_SCRIPT_PATH")
+
+    try:
+        # Use osascript to open a new Terminal window and run the command
+        subprocess.Popen([
+            "osascript", "-e",
+            f'tell application "Terminal" to do script "{python_executable} {server_script_path}"'
+        ])
+    except Exception as e:
+        printR(f"Failed to relaunch server {SERVER_ID}: {e}")
 
 def wait_for_server():
     global server_socket
@@ -73,16 +91,30 @@ def connect_to_gfd():
     except Exception as e:
         printR(f"Failed to connect to GFD: {e}")
 
-def receive_heartbeat_from_gfd():
-        try:
-            while True:
-                if gfd_socket:
-                    message = receive(gfd_socket, COMPONENT_ID)
-                    if message and message.get("message") == "heartbeat":
+def receive_message_from_gfd():
+    """Listen for messages from GFD, including heartbeats and recovery commands."""
+    try:
+        while True:
+            if gfd_socket:
+                message = receive(gfd_socket, COMPONENT_ID)
+                if message:
+                    action = message.get("message")
+                    if action == "heartbeat":
+                        # Acknowledge GFD heartbeat
                         heartbeat_acknowledgement = create_message(COMPONENT_ID, "heartbeat acknowledgment")
                         send(gfd_socket, heartbeat_acknowledgement, "GFD")
-        except Exception as e:
-            printR(f"Error heartbeating with GFD: {e}")
+                    elif action == "recover_server":
+                        # Handle recovery message from GFD
+                        server_id = message.get("server_id", None)
+                        if server_id:
+                            printY(f"Received recovery request from GFD for server {server_id}")
+                            begin_automated_recovery()  # Call the recovery function
+                        else:
+                            printR("Received recover_server message without server_id.")
+                    else:
+                        printY(f"Unknown message received from GFD: {message}")
+    except Exception as e:
+        printR(f"Error handling messages from GFD: {e}")
 
 def main():
     global heartbeat_interval
@@ -93,7 +125,7 @@ def main():
 
     connect_to_gfd()
 
-    server_thread = threading.Thread(target=receive_heartbeat_from_gfd, daemon=True)
+    server_thread = threading.Thread(target=receive_message_from_gfd, daemon=True)
     server_thread.start()
 
     try:

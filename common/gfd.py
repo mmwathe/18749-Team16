@@ -5,6 +5,7 @@ from communication_utils import *
 
 COMPONENT_ID = "GFD"
 membership = {}
+lfd_connections = {}  # Map LFD component IDs to their connections
 member_count = 0
 lock = threading.Lock()
 rm_socket = None
@@ -30,6 +31,7 @@ def handle_lfd_connection(conn, addr):
         # Retrieve and print the component_id from the LFD's registration message
         component_id = message.get("component_id", "Unknown")
         printP(f"Received registration from {component_id} at {addr}")
+        lfd_connections[component_id] = conn  # Store the LFD connection
         threading.Thread(target=send_heartbeat_continuously, args=(conn, addr, component_id), daemon=True).start()
 
         # Handle further messages from this LFD in a loop
@@ -48,6 +50,7 @@ def handle_lfd_connection(conn, addr):
         printR(f"Error receiving message from LFD at {addr}: {e}")
     finally:
         conn.close()
+        lfd_connections.pop(component_id, None)  # Remove the LFD connection on disconnect
 
 def handle_lfd_message(component_id, message):
     action = message.get("message", "")
@@ -60,6 +63,27 @@ def handle_lfd_message(component_id, message):
         pass
     else:
         printLP(f"Unknown action '{action}' from LFD")
+
+def handle_rm_message(message):
+    """Handles messages from the RM."""
+    action = message.get("message", "")
+    server_id = message.get("server_id", "")
+    if action == "recovery_in_progress" and server_id:
+        forward_recovery_to_lfd(server_id)
+
+def forward_recovery_to_lfd(server_id):
+    """Forwards recovery message to the corresponding LFD."""
+    global lfd_connections
+    lfd_connection = lfd_connections.get(f"LFD_{server_id}")
+    if lfd_connection:
+        try:
+            recovery_message = create_message(COMPONENT_ID, "recover_server", server_id=server_id)
+            send(lfd_connection, recovery_message, f"LFD_{server_id}")
+            printG(f"Forwarded recovery message to LFD for server {server_id}")
+        except socket.error as e:
+            printR(f"Failed to forward recovery message to LFD for server {server_id}: {e}")
+    else:
+        printR(f"No LFD found for server {server_id}. Recovery message not sent.")
 
 def send_heartbeat_continuously(conn, addr, component_id):
     """Sends heartbeat messages continuously to an LFD."""
@@ -84,22 +108,22 @@ def add_replica(replica_id):
             print_membership()
             send_update_to_rm()
 
-def delete_replica(replica_id):
+def delete_replica(server_id):
     """Removes a replica from the membership and notifies RM."""
     global member_count
     with lock:
-        if replica_id in membership:
-            del membership[replica_id]
+        if server_id in membership:
+            del membership[server_id]
             member_count -= 1
-            printR(f"Replica '{replica_id}' deleted from membership.")
+            printR(f"Replica '{server_id}' deleted from membership.")
             print_membership()
-            send_update_to_rm()
+            send_update_to_rm(server_id)
 
-def send_update_to_rm():
+def send_update_to_rm(server_id=None):
     """Sends updated membership count to RM."""
     global rm_socket, member_count
     if rm_socket:
-        update_membership = create_message(COMPONENT_ID, "update_membership", member_count=member_count)
+        update_membership = create_message(COMPONENT_ID, "update_membership", member_count=member_count, server_id=server_id)
         send(rm_socket, update_membership, "RM")
         printG(f"Sent updated membership count to RM: {member_count}")
     else:
@@ -130,11 +154,25 @@ def main():
         while True:
             conn, addr = server_socket.accept()
             threading.Thread(target=handle_lfd_connection, args=(conn, addr), daemon=True).start()
+
+            # Listen for RM messages in a separate thread
+            if rm_socket:
+                threading.Thread(target=handle_rm_connection, args=(rm_socket,), daemon=True).start()
     except KeyboardInterrupt:
         printY("GFD interrupted by user.")
     finally:
         server_socket.close()
         printR("GFD shutdown.")
+
+def handle_rm_connection(sock):
+    """Handles incoming messages from RM."""
+    try:
+        while True:
+            message = receive(sock, COMPONENT_ID)
+            if message:
+                handle_rm_message(message)
+    except socket.error as e:
+        printR(f"Connection to RM lost: {e}")
 
 if __name__ == '__main__':
     main()
