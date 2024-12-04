@@ -43,7 +43,7 @@ def handle_lfd_connection(conn, addr):
 
             # Process the incoming message from the LFD
             if "LFD" in message.get("component_id"):
-                handle_lfd_message(component_id, message)
+                handle_lfd_message(message)
             else:
                 printY(f"Ignored message from unknown component: {message.get('component_id')}")
     except socket.error as e:

@@ -48,10 +48,8 @@ def handle_server_communication():
 
 def begin_automated_recovery():
     global server_socket, SERVER_ID
-
-    # Full path to the server script
+    time.sleep(10)
     server_script_path = os.environ.get("SERVER_SCRIPT_PATH")
-
     try:
         # Use osascript to open a new Terminal window and run the command
         subprocess.Popen([
