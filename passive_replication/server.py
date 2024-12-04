@@ -133,10 +133,12 @@ def handle_client_requests(client_socket):
                 break
 
             message_type = message.get("message")
+            request_number = message.get("request_number", "unknown")
+
             if message_type == "update":
                 state += 1
                 printG(f"State updated to {state} by client request.")
-                response = create_message(COMPONENT_ID, "state updated", state=state)
+                response = create_message(COMPONENT_ID, "state updated", state=state, request_number=request_number)
                 send(client_socket, response, "Client")
             elif message_type == "ping":
                 response = create_message(COMPONENT_ID, "pong")
