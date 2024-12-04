@@ -41,7 +41,7 @@ def handle_server_communication():
             notify_gfd_remove_replica()
             server_socket.close()
             break
-        elif response.get('type') == 'shutdown':
+        elif response.get("message") == 'shutdown':
             printY(f"Server {SERVER_ID} is shutting down. Notifying GFD.")
             notify_gfd_remove_replica()
             server_socket.close()
