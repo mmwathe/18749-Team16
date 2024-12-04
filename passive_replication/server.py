@@ -1,8 +1,9 @@
 import socket
 import time
 import threading
-import os
+import os, sys
 from dotenv import load_dotenv
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
 from communication_utils import *
 
 load_dotenv()
