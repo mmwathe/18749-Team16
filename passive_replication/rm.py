@@ -40,7 +40,7 @@ def handle_GFD_message(sock, message):
         else:
             printY(f"RM Membership Unchanged: {new_member_count} available servers")
         MEMBER_COUNT = new_member_count
-
+        global assign_intial_primary
         if not assign_intial_primary:
             # Assign the initial primary server
             printY("Assigning initial primary server.")
@@ -103,8 +103,11 @@ def accept_client_connections(server_socket):
     """Accepts client connections and sends the primary server IP to clients upon connection."""
     global primary_server
     while True:
+        print("hi")
         try:
             client_socket, client_address = server_socket.accept()
+            print(client_socket)
+            print(client_address)
             client_sockets.append(client_socket)
             printG(f"Client connected: {client_address}")
 
@@ -113,7 +116,7 @@ def accept_client_connections(server_socket):
             send(client_socket, response, "Client")
 
             # Close the client socket after sending the IP
-            client_socket.close()
+            #client_socket.close()
             printG(f"Sent primary server IP {primary_server} to client.")
         except Exception as e:
             printR(f"Error accepting client connections: {e}")
