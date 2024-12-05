@@ -1,12 +1,13 @@
 import socket
 import json
-import sys, os
+import sys, os, threading
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
 from communication_utils import *
 
 # Global Variables
 available_servers = []  # List of active servers
 primary_server = "S1"   # Initial primary server
+client_sockets = []
 
 assign_intial_primary = False
 
@@ -42,6 +43,7 @@ def handle_GFD_message(sock, message):
 
         if not assign_intial_primary:
             # Assign the initial primary server
+            printY("Assigning initial primary server.")
             assign_intial_primary = True
             promote_new_primary(sock)
 
@@ -83,6 +85,9 @@ def promote_new_primary(gfd_sock):
         return
 
     primary_server = new_primary
+
+    for sock in client_sockets:
+        send(sock, create_message("RM", "primary_server", primary_server=new_primary), "Client")
     printY(f"Promoting {primary_server} to primary server.")
 
     # Notify GFD about the new primary
@@ -93,16 +98,40 @@ def promote_new_primary(gfd_sock):
     except Exception as e:
         printR(f"Failed to notify GFD about new primary server: {e}")
 
+
+def accept_client_connections(server_socket):
+    """Accepts client connections and sends the primary server IP to clients upon connection."""
+    global primary_server
+    while True:
+        try:
+            client_socket, client_address = server_socket.accept()
+            client_sockets.append(client_socket)
+            printG(f"Client connected: {client_address}")
+
+            # Send the primary server IP to the client
+            response = create_message("RM", "primary_server", primary_server=primary_server)
+            send(client_socket, response, "Client")
+
+            # Close the client socket after sending the IP
+            client_socket.close()
+            printG(f"Sent primary server IP {primary_server} to client.")
+        except Exception as e:
+            printR(f"Error accepting client connections: {e}")
+
 def main():
     COMPONENT_NAME = "Replication Manager"
     COMPONENT_ID = "RM"
     RM_IP = '127.0.0.1'
     RM_PORT = 12346
+    CLIENT_PORT = 13579
 
     global MEMBER_COUNT
     MEMBER_COUNT = 0
 
     rm_socket = initialize_component(COMPONENT_ID, COMPONENT_NAME, RM_IP, RM_PORT, 1)
+    client_socket = initialize_component(COMPONENT_ID, "Client Listener", RM_IP, CLIENT_PORT, 1)
+
+    threading.Thread(target=accept_client_connections, args=(client_socket,), daemon=True).start()
 
     printY("Waiting for GFD to connect...")
 
