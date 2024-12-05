@@ -8,6 +8,8 @@ from communication_utils import *
 available_servers = []  # List of active servers
 primary_server = "S1"   # Initial primary server
 
+assign_intial_primary = False
+
 def handle_GFD_message(sock, message):
     global MEMBER_COUNT, available_servers, primary_server
 
@@ -37,6 +39,11 @@ def handle_GFD_message(sock, message):
         else:
             printY(f"RM Membership Unchanged: {new_member_count} available servers")
         MEMBER_COUNT = new_member_count
+
+        if not assign_intial_primary:
+            # Assign the initial primary server
+            assign_intial_primary = True
+            promote_new_primary(sock)
 
     else:
         timestamp = message.get("timestamp", "unknown time")
