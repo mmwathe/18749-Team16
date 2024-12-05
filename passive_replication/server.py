@@ -18,9 +18,9 @@ PRIMARY_SERVER_ID = 'S1'  # Primary server starts as S1
 
 SERVER_IDS = ['S1', 'S2', 'S3']
 SERVER_IPS = {
-    'S1': '172.26.115.175',
+    'S1': '172.26.117.255',
     'S2': '172.26.2.232',
-    'S3': '172.26.117.255',
+    'S3': '172.26.115.175',
 }
 
 CHECKPOINT_INTERVAL = 10

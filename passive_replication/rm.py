@@ -1,5 +1,7 @@
 import socket
 import json
+import sys, os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
 from communication_utils import *
 
 # Global Variables
@@ -29,6 +31,8 @@ def handle_GFD_message(sock, message):
         elif new_member_count < MEMBER_COUNT:
             # Server removed
             printR(f"RM Membership Decreased: {new_member_count} available servers")
+            printY(f"Attempting to Automatically Recover {server_id}")
+            send(sock, create_message("RM", "recover_server", server_id=server_id), "GFD")
             remove_server(server_id, sock)
         else:
             printY(f"RM Membership Unchanged: {new_member_count} available servers")
