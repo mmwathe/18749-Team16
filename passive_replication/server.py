@@ -1,7 +1,8 @@
 import socket
 import time
 import threading
-import os, sys
+import os
+import sys
 from dotenv import load_dotenv
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
 from communication_utils import *
@@ -51,68 +52,29 @@ def connect_to_lfd():
 
 
 def handle_heartbeat():
-    """Respond to heartbeats from the LFD."""
+    """Respond to heartbeats from the LFD and handle role change."""
+    global role, PRIMARY_SERVER_ID
     while True:
         try:
             if lfd_socket:
                 message = receive(lfd_socket, COMPONENT_ID)
-                if message and message.get("message") == "heartbeat":
-                    heartbeat_message = create_message(COMPONENT_ID, "heartbeat acknowledgment")
-                    send(lfd_socket, heartbeat_message, "LFD")
-        except Exception as e:
-            printR(f"Heartbeat handling error: {e}")
-        time.sleep(1)
-
-
-def determine_role():
-    """Determine whether the server is primary or backup."""
-    global role, PRIMARY_SERVER_ID
-    for server_id, server_ip in SERVER_IPS.items():
-        if server_id != COMPONENT_ID: # Skip self
-            try:
-                sock = connect_to_socket(server_ip, CHECKPOINT_PORT, timeout=2)
-                if sock:
-                    # A primary is active
-                    PRIMARY_SERVER_ID = server_id
-                    role = 'backup'
-                    printG(f"Server {COMPONENT_ID} starting as backup. Detected primary: {PRIMARY_SERVER_ID}")
-                    sock.close()
-                    return
-            except:
-                continue
-    # No active primary detected; promote self
-    role = 'primary'
-    PRIMARY_SERVER_ID = COMPONENT_ID
-    printG(f"Server {COMPONENT_ID} starting as primary.")
-
-def monitor_primary():
-    """Monitor the health of the primary server and promote if necessary."""
-    global role, PRIMARY_SERVER_ID
-    while role == 'backup':
-        primary_ip = SERVER_IPS[PRIMARY_SERVER_ID]
-        try:
-            sock = connect_to_socket(primary_ip, CHECKPOINT_PORT, timeout=2)
-            if sock:
-                # Successfully connected; primary is alive
-                sock.close()
-                time.sleep(2)  # Check periodically
-            else:
-                raise Exception("Primary unresponsive")
-        except:
-            time.sleep(1)
-            sock = connect_to_socket(primary_ip, CHECKPOINT_PORT, timeout=2)
-            if sock:
-                # Successfully connected; primary is alive
-                sock.close()
-            else:
-            # Promote self if primary is down
-                with threading.Lock():
-                    if role == 'backup':  # Ensure only one backup promotes
+                if message:
+                    action = message.get("message")
+                    if action == "heartbeat":
+                        # Acknowledge heartbeat
+                        heartbeat_message = create_message(COMPONENT_ID, "heartbeat acknowledgment")
+                        send(lfd_socket, heartbeat_message, "LFD")
+                    elif action == "new_primary":
+                        # Promote self to primary
                         role = 'primary'
                         PRIMARY_SERVER_ID = COMPONENT_ID
                         printG(f"Server {COMPONENT_ID} promoted to primary.")
                         threading.Thread(target=send_checkpoint, daemon=True).start()
-                        break
+                    else:
+                        printY(f"Unknown message received from LFD: {message}")
+        except Exception as e:
+            printR(f"Error handling heartbeat or role change: {e}")
+        time.sleep(1)
 
 
 def accept_client_connections(server_socket):
@@ -123,7 +85,6 @@ def accept_client_connections(server_socket):
             printG(f"Client connected: {client_address}")
             with client_lock:
                 clients[client_socket] = client_address
-            # if role == 'primary':
             threading.Thread(target=handle_client_requests, args=(client_socket,), daemon=True).start()
         except Exception as e:
             printR(f"Error accepting client connections: {e}")
@@ -134,7 +95,7 @@ def handle_client_requests(client_socket):
     global state
     try:
         while True:
-            if role != 'primary': # Only primary handles client requests
+            if role != 'primary':  # Only primary handles client requests
                 continue
             message = receive(client_socket, COMPONENT_ID)
             if not message:
@@ -219,7 +180,6 @@ def synchronize_with_primary():
 
 
 def main():
-    determine_role()
     connect_to_lfd()
     threading.Thread(target=handle_heartbeat, daemon=True).start()
 
@@ -228,12 +188,6 @@ def main():
 
     threading.Thread(target=accept_client_connections, args=(client_socket,), daemon=True).start()
     threading.Thread(target=accept_checkpoint_connections, args=(checkpoint_socket,), daemon=True).start()
-    if role == 'backup':
-        synchronize_with_primary()
-        threading.Thread(target=monitor_primary, daemon=True).start()
-
-    if role == 'primary':
-        threading.Thread(target=send_checkpoint, daemon=True).start()
 
     try:
         while True:
@@ -251,5 +205,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

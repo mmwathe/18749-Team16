@@ -87,6 +87,7 @@ def accept_new_connections(server_socket):
         printR(f"Error accepting client connection: {e}")
 
 def process_client_messages():
+    # print("Processing client messages")
     """Processes messages from connected clients and handles responses."""
     global state
     for client_socket in list(clients.keys()):
@@ -147,11 +148,13 @@ def synchronize_state():
         sock.close() 
 
 def flush_message_queue():
+    # print("Flushing message queue")
     """Sends all responses in the message queue."""
     while not message_queue.empty():
         try:
             client_socket, response = message_queue.get_nowait()
             send(client_socket, response, f"Client@{clients[client_socket]}")
+            # print(f"Sent response to {clients[client_socket]}")
         except KeyError:
             printR("Attempted to send message to a disconnected client.")
         except Exception as e:

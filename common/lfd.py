@@ -107,6 +107,9 @@ def receive_message_from_gfd():
                             begin_automated_recovery()  # Call the recovery function
                         else:
                             printR("Received recover_server message without server_id.")
+                    elif action == "new_primary":
+                        election_message = create_message(COMPONENT_ID, "new_primary")
+                        send(server_socket, election_message, SERVER_ID)
                     else:
                         printY(f"Unknown message received from GFD: {message}")
     except Exception as e:
