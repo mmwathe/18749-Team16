@@ -92,7 +92,7 @@ class Client:
                 self.reconnect()
 
                 # Send an update message and process responses
-                self.send_to_all_servers("update", request_number=self.request_number)
+                self.send_to_all_servers("increase", request_number=self.request_number)
                 self.receive_from_all_servers()
 
                 time.sleep(2)  # Delay between requests
