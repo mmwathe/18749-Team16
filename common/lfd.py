@@ -52,7 +52,7 @@ def handle_server_communication():
 def begin_automated_recovery():
     global server_socket, SERVER_ID
     time.sleep(10)
-    server_script_path = os.environ.get("SERVER_SCRIPT_PATH")
+    server_script_path = "/Users/hartman/Documents/College/Senior_Fall/18-749/18749-Team16/.venv/bin/python /Users/hartman/Documents/College/Senior_Fall/18-749/18749-Team16/passive_replication/server.py --checkpoint_interval {CHECKPOINT_INTERVAL}"
     try:
         # Use osascript to open a new Terminal window and run the command
         subprocess.Popen([
