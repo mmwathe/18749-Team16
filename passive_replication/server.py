@@ -1,4 +1,5 @@
 import socket
+import argparse
 import time
 import threading
 import os
@@ -174,6 +175,12 @@ def synchronize_with_primary():
 
 
 def main():
+    global CHECKPOINT_INTERVAL
+    parser = argparse.ArgumentParser(description="Server for passive replication.")
+    parser.add_argument('--checkpoint_interval', type=int, default=4, help="Checkpoint interval in seconds.")
+    args = parser.parse_args()
+    CHECKPOINT_INTERVAL = args.checkpoint_interval
+
     connect_to_lfd()
     threading.Thread(target=handle_heartbeat, daemon=True).start()
 
