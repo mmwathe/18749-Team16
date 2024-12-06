@@ -43,7 +43,7 @@ def connect_to_lfd():
             lfd_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             lfd_socket.connect((LFD_IP, LFD_PORT))
             printG(f"Connected to LFD at {LFD_IP}:{LFD_PORT}")
-            registration_message = create_message(COMPONENT_ID, "register")
+            registration_message = create_message(COMPONENT_ID, "register", checkpoint=CHECKPOINT_INTERVAL)
             send(lfd_socket, registration_message, "LFD")
         except Exception as e:
             printR(f"Failed to connect to LFD: {e}. Retrying in 5 seconds...")
