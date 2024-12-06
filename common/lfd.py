@@ -23,7 +23,7 @@ gfd_socket = None
 server_socket = None
 CHECKPOINT_INTERVAL = 10
 
-reliable_server = "S1"
+reliable_server = None
 
 def handle_server_registration():
     global SERVER_ID, CHECKPOINT_INTERVAL
@@ -55,7 +55,7 @@ def handle_server_communication():
 def begin_automated_recovery():
     global server_socket, SERVER_ID, CHECKPOINT_INTERVAL
     time.sleep(10)
-    server_script_path = f"/Users/hartman/Documents/College/Senior_Fall/18-749/18749-Team16/.venv/bin/python /Users/hartman/Documents/College/Senior_Fall/18-749/18749-Team16/passive_replication/server.py --checkpoint_interval {CHECKPOINT_INTERVAL}"
+    server_script_path = f"/Users/hartman/Documents/College/Senior_Fall/18-749/18749-Team16/.venv/bin/python /Users/hartman/Documents/College/Senior_Fall/18-749/18749-Team16/active_replication/server.py"
     try:
         # Use osascript to open a new Terminal window and run the command
         subprocess.Popen([
@@ -123,6 +123,7 @@ def receive_message_from_gfd():
                     elif action == "new_reliable":
                         global reliable_server
                         reliable_server = message.get("server_id", None)
+                        print(f"received new reliable server: {reliable_server}")
                     else:
                         printY(f"Unknown message received from GFD: {message}")
     except Exception as e:

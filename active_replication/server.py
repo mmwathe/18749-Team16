@@ -45,6 +45,7 @@ def connect_to_lfd():
         lfd_socket = None
 
 def handle_heartbeat():
+    global RELIABLE_SERVER_IP
     while True:
         if lfd_socket:
             message = receive(lfd_socket, COMPONENT_ID)
@@ -52,7 +53,10 @@ def handle_heartbeat():
                 heartbeat_message = create_message(COMPONENT_ID, "heartbeat acknowledgment")
                 send(lfd_socket, heartbeat_message, LFD_ID)
             elif message and message.get("message") == "new_reliable":
-                RELIABLE_SERVER_IP = SERVER_IPS[int(message.get("ServerId")[-1])-1]
+                if(message.get("server_id") != None):
+                    RELIABLE_SERVER_IP = SERVER_IPS[int(message.get("server_id")[-1])-1]
+                else:
+                    print("message was none")
                 
         time.sleep(1)
 
@@ -174,7 +178,10 @@ def main():
     connect_to_lfd()
     threading.Thread(target=handle_heartbeat, daemon=True).start()
     time.sleep(2)
-    if (RELIABLE_SERVER_IP != None and RELIABLE_SERVER_IP != MY_IP): synchronize_state()
+    if (RELIABLE_SERVER_IP != None and RELIABLE_SERVER_IP != MY_IP): 
+        print(RELIABLE_SERVER_IP)
+        print("hi")
+        synchronize_state()
 
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -185,7 +192,7 @@ def main():
     
     server_socket2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_socket2.bind((RELIABLE_SERVER_IP, RELIABLE_SERVER_PORT))
+    server_socket2.bind((MY_IP, RELIABLE_SERVER_PORT))
     server_socket2.listen(5)
 
     # Start the heartbeat thread
