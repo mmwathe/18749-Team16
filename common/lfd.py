@@ -24,7 +24,7 @@ server_socket = None
 CHECKPOINT_INTERVAL = 10
 
 def handle_server_registration():
-    global SERVER_ID
+    global SERVER_ID, CHECKPOINT_INTERVAL
     message = receive(server_socket, COMPONENT_ID)
     if message and message.get('message') == 'register':
         checkpoint_interval = message.get('checkpoint', CHECKPOINT_INTERVAL)
@@ -49,8 +49,9 @@ def handle_server_communication():
             break
         time.sleep(heartbeat_interval)
 
+# NOTE: Get rid of --checkpoint_frequency for active replication
 def begin_automated_recovery():
-    global server_socket, SERVER_ID
+    global server_socket, SERVER_ID, CHECKPOINT_INTERVAL
     time.sleep(10)
     server_script_path = "/Users/hartman/Documents/College/Senior_Fall/18-749/18749-Team16/.venv/bin/python /Users/hartman/Documents/College/Senior_Fall/18-749/18749-Team16/passive_replication/server.py --checkpoint_interval {CHECKPOINT_INTERVAL}"
     try:

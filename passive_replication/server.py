@@ -36,7 +36,7 @@ lfd_socket = None
 
 
 def connect_to_lfd():
-    global lfd_socket
+    global lfd_socket, CHECKPOINT_INTERVAL
     while not lfd_socket:
         try:
             lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -122,7 +122,7 @@ def handle_client_requests(client_socket):
 
 
 def send_checkpoint():
-    global state
+    global state, CHECKPOINT_INTERVAL
     while role == 'primary':
         time.sleep(CHECKPOINT_INTERVAL)
         for server_id, server_ip in SERVER_IPS.items():
