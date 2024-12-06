@@ -24,7 +24,7 @@ SERVER_IPS = {
     'S3': '172.26.20.148',
 }
 
-CHECKPOINT_INTERVAL = 10
+CHECKPOINT_INTERVAL = None
 LFD_IP = '127.0.0.1'
 LFD_PORT = 54321
 
@@ -36,7 +36,7 @@ lfd_socket = None
 
 
 def connect_to_lfd():
-    global lfd_socket
+    global lfd_socket, CHECKPOINT_INTERVAL
     while not lfd_socket:
         try:
             lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -122,7 +122,7 @@ def handle_client_requests(client_socket):
 
 
 def send_checkpoint():
-    global state
+    global state, CHECKPOINT_INTERVAL
     while role == 'primary':
         time.sleep(CHECKPOINT_INTERVAL)
         for server_id, server_ip in SERVER_IPS.items():
@@ -177,7 +177,7 @@ def synchronize_with_primary():
 def main():
     global CHECKPOINT_INTERVAL
     parser = argparse.ArgumentParser(description="Server for passive replication.")
-    parser.add_argument('--checkpoint_interval', type=int, default=4, help="Checkpoint interval in seconds.")
+    parser.add_argument('--checkpoint_interval', type=int, default=10, help="Checkpoint interval in seconds.")
     args = parser.parse_args()
     CHECKPOINT_INTERVAL = args.checkpoint_interval
 
