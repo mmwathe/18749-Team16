@@ -51,11 +51,6 @@ class Client:
              printR(f"Failed to connect to RM: {e} ")
         return False
 
-
-
-
-
-
     def connect_to_server(self):
         """Connect to a server from the list of IPs."""
 
