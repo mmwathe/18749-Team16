@@ -91,17 +91,6 @@ def handle_rm_message(message):
                 printR(f"Failed New Primary {server_id}: {e}")
         else:
             printR(f"No LFD found for server {server_id}. Election message not sent.")
-    elif action == "new_primary" and server_id:
-        lfd_connection = lfd_connections.get(f"LFD{server_id[-1]}")
-        if lfd_connection:
-            try:
-                election_message = create_message(COMPONENT_ID, "new_primary", server_id=server_id)
-                send(lfd_connection, election_message, f"LFD{server_id[-1]}")
-                printG(f"New Primary:  {server_id}")
-            except socket.error as e:
-                printR(f"Failed New Primary {server_id}: {e}")
-        else:
-            printR(f"No LFD found for server {server_id}. Election message not sent.")
     elif action == "new_reliable" and server_id:
         lfd_connection = lfd_connections.get(f"LFD{server_id[-1]}")
         if lfd_connection:
@@ -111,8 +100,8 @@ def handle_rm_message(message):
                 printG(f"New Reliable Server: {server_id}")
             except socket.error as e:
                 printR(f"Failed to send reliable server message to {server_id}: {e}")
-            else:
-                printR(f"No LFD found for server {server_id}. Reliable server message not sent.")
+        else:
+            printR(f"No LFD found for server {server_id}. Reliable server message not sent.")
 
 
 def send_heartbeat_continuously(conn, addr, component_id):

@@ -1,10 +1,12 @@
 import socket
 import json
+import sys, os, threading
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
 from communication_utils import *
 
 reliable_server = "S1"
 available_servers = []
-assign_intial_reliable = False
+assign_initial_reliable = False
 
 def handle_GFD_message(sock, message):
     global MEMBER_COUNT
@@ -69,8 +71,7 @@ def promote_new_reliable(gfd_sock):
     elif "S3" in available_servers:
         new_reliable = "S3"
     else:
-        printR("No available servers to promote to reliable!")
-        return
+        new_reliable = None
 
     reliable_server = new_reliable
 
