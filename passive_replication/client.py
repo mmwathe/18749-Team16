@@ -1,6 +1,7 @@
 import socket
 import time
 import os, sys
+import threading
 from dotenv import load_dotenv
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
 from communication_utils import *
@@ -13,6 +14,9 @@ SERVER_IPS = [
     os.environ.get("S2"),
     os.environ.get("S3")  # Adjust to actual server IPs
 ]
+RM_IP = 'localhost'
+RM_PORT = 13579
+
 
 class Client:
     def __init__(self, server_port, client_id):
@@ -21,18 +25,49 @@ class Client:
         self.client_id = client_id
         self.socket = None
         self.connected_server = None
+        self.request_number = 0
+        self.rmsocket = None
+        self.primary = -1
+
+    def listen_to_rm(self):
+        while self.rmsocket:
+            try:
+                message = receive(self.rmsocket, "RM")
+                print(message)
+                self.primary = int(message.get("primary_server")[-1])
+            except Exception as e:
+                printR(f"Error during communication with RM: {e}")
+
+
+    def connect_to_rm(self):
+        try:
+             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+             sock.connect((RM_IP, RM_PORT))
+             self.rmsocket = sock
+             printG("Connected to RM")
+             threading.Thread(target=self.listen_to_rm, daemon=True).start()
+             return True
+        except Exception as e:
+             printR(f"Failed to connect to RM: {e} ")
+        return False
+
+
+
+
+
 
     def connect_to_server(self):
         """Connect to a server from the list of IPs."""
-        for ip in self.server_ips:
-            try:
+
+        ip = self.server_ips[self.primary - 1]
+        try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.connect((ip, self.server_port))
                 self.socket = sock
                 self.connected_server = ip
                 printG(f"Connected to server at {ip}:{self.server_port}")
                 return True
-            except Exception as e:
+        except Exception as e:
                 printR(f"Failed to connect to server {ip}:{self.server_port}: {e}")
         return False
 
@@ -41,8 +76,9 @@ class Client:
         while self.socket:
             try:
                 # Example: Send an 'update' message
-                message = create_message(self.client_id, "update")
+                message = create_message(self.client_id, "update", request_number=self.request_number)
                 send(self.socket, message, f"Server@{self.connected_server}")
+                self.request_number += 1
                 
                 response = receive(self.socket, f"Server@{self.connected_server}")
                 if not response:
@@ -58,7 +94,10 @@ class Client:
                 break
 
     def run(self):
+        self.connect_to_rm()
         """Run the client."""
+        while(self.primary == -1):
+            time.sleep(1)
         while True:
             if not self.socket:
                 printY("Attempting to connect to a server...")

@@ -2,6 +2,9 @@ from collections import defaultdict
 import os, sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
 from communication_utils import *
+from dotenv import load_dotenv
+
+load_dotenv()
 
 S1 = os.environ.get("S1")
 S2 = os.environ.get("S2")

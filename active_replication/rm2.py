@@ -1,5 +1,6 @@
 import socket
 import json
+import time
 from communication_utils import *
 
 def handle_GFD_message(sock, message):
@@ -11,15 +12,10 @@ def handle_GFD_message(sock, message):
         gfd_member_count = message.get("member_count", 0)
     elif message.get("message") == "update_membership":
         new_member_count = message.get("member_count", MEMBER_COUNT)
-        server_id = message.get("server_id", "unknown server")
-        if new_member_count < MEMBER_COUNT:
-            printR(f"RM Membership Decreased: {new_member_count} available servers")
-            printY(f"Attempting to Automatically Recover {server_id}")
-
-            # Send recovery command
-            send(sock, create_message("RM", "recover_server", server_id=server_id), "GFD")
-        elif new_member_count > MEMBER_COUNT:
+        if new_member_count > MEMBER_COUNT:
             printG(f"RM Membership Increased: {new_member_count} available servers")
+        elif new_member_count < MEMBER_COUNT:
+            printR(f"RM Membership Decreased: {new_member_count} available servers")
         else:
             printY(f"RM Membership Unchanged: {new_member_count} available servers")
         MEMBER_COUNT = new_member_count

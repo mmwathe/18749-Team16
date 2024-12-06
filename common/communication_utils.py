@@ -50,7 +50,7 @@ def print_log(message, receiver, sent=True):
     color = "\033[96m" if sent else "\033[95m"  # Cyan for sent, Purple for received
     reset = "\033[00m"
     
-    print(f"{color}{sender} \u2192 {receiver} ({message_type}) at {timestamp}{reset}")
+    print(f"{color}{timestamp}: {sender} \u2192 {receiver} ({message_type}){reset}")
     if details:
         for key, value in details.items():
             print(f"{color}  {key}: {value}{reset}")
@@ -86,11 +86,18 @@ def initialize_component(component_id, component_name, ip, port, max_connections
     print(f"{component_id} active on {ip}:{port}")
     print("-----------------------------------------------------")
 
-    # Create and configure the socket
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind((ip, port))
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.listen(max_connections)
+    while True:
+        try:
+            # Create and configure the socket
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.bind((ip, port))
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.listen(max_connections)
+            break
+        except: 
+            time.sleep(1)
+            continue
+        
 
     return sock
 
