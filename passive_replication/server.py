@@ -24,7 +24,7 @@ SERVER_IPS = {
     'S3': '172.26.20.148',
 }
 
-CHECKPOINT_INTERVAL = 10
+CHECKPOINT_INTERVAL = None
 LFD_IP = '127.0.0.1'
 LFD_PORT = 54321
 
@@ -177,7 +177,7 @@ def synchronize_with_primary():
 def main():
     global CHECKPOINT_INTERVAL
     parser = argparse.ArgumentParser(description="Server for passive replication.")
-    parser.add_argument('--checkpoint_interval', type=int, default=4, help="Checkpoint interval in seconds.")
+    parser.add_argument('--checkpoint_interval', type=int, default=10, help="Checkpoint interval in seconds.")
     args = parser.parse_args()
     CHECKPOINT_INTERVAL = args.checkpoint_interval
 
