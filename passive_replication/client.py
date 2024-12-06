@@ -9,11 +9,13 @@ from communication_utils import *
 load_dotenv()
 
 # List of server IPs in order of preference
-SERVER_IPS = [
-    os.environ.get("S1"),
-    os.environ.get("S2"),
-    os.environ.get("S3")  # Adjust to actual server IPs
-]
+SERVER_MAP = {
+    '172.26.122.219': 'S1',
+    '172.26.99.196': 'S2'
+    #'172.26.20.148': 'S3'
+}
+SERVER_IPS = list(SERVER_MAP.keys())
+
 RM_IP = 'localhost'
 RM_PORT = 13579
 
@@ -53,14 +55,14 @@ class Client:
 
     def connect_to_server(self):
         """Connect to a server from the list of IPs."""
-
         ip = self.server_ips[self.primary - 1]
         try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.connect((ip, self.server_port))
                 self.socket = sock
                 self.connected_server = ip
-                printG(f"Connected to server at {ip}:{self.server_port}")
+                server_id = SERVER_MAP.get(ip, "Unknown")
+                printG(f"Connected to server {server_id} ({ip}:{self.server_port})")
                 return True
         except Exception as e:
                 printR(f"Failed to connect to server {ip}:{self.server_port}: {e}")
@@ -68,25 +70,26 @@ class Client:
 
     def send_and_receive(self):
         """Send messages to the server and receive responses."""
+        server_id = SERVER_MAP.get(self.connected_server, "Unknown")
         while self.socket:
             try:
-                # Example: Send an 'update' message
                 message = create_message(self.client_id, "increase", request_number=self.request_number)
-                send(self.socket, message, f"Server@{self.connected_server}")
+                send(self.socket, message, server_id)
                 self.request_number += 1
-                
-                response = receive(self.socket, f"Server@{self.connected_server}")
+
+                response = receive(self.socket, server_id)
                 if not response:
                     printR("Server disconnected. Reconnecting...")
                     self.socket.close()
                     self.socket = None
-                    break  # Break loop to reconnect
+                    break
                 time.sleep(2)  # Simulate client request frequency
             except Exception as e:
                 printR(f"Error during communication: {e}")
                 self.socket.close()
                 self.socket = None
                 break
+
 
     def run(self):
         self.connect_to_rm()
