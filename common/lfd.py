@@ -21,13 +21,17 @@ timeout_threshold = 10  # Time in seconds to wait for a response before marking 
 SERVER_ID = None
 gfd_socket = None
 server_socket = None
+CHECKPOINT_INTERVAL = 10
 
 def handle_server_registration():
     global SERVER_ID
     message = receive(server_socket, COMPONENT_ID)
     if message and message.get('message') == 'register':
+        checkpoint_interval = message.get('checkpoint', CHECKPOINT_INTERVAL)
+        CHECKPOINT_INTERVAL = checkpoint_interval
         SERVER_ID = message.get('component_id', 'Unknown Server')
         printG(f"Server {SERVER_ID} registered with LFD.")
+
         response = create_message(COMPONENT_ID, "add replica", message_data=SERVER_ID)
         send(gfd_socket, response, "GFD")
 
