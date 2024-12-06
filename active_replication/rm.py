@@ -2,6 +2,10 @@ import socket
 import json
 from communication_utils import *
 
+reliable_server = "S1"
+available_servers = []
+assign_intial_reliable = False
+
 def handle_GFD_message(sock, message):
     global MEMBER_COUNT
 
@@ -18,14 +22,65 @@ def handle_GFD_message(sock, message):
 
             # Send recovery command
             send(sock, create_message("RM", "recover_server", server_id=server_id), "GFD")
+            remove_server(server_id, sock)
         elif new_member_count > MEMBER_COUNT:
             printG(f"RM Membership Increased: {new_member_count} available servers")
+            add_server(server_id)
+            global assign_initial_reliable
+            if not assign_initial_reliable:
+                # Assign the initial reliable server
+                printY("Assigning initial reliable server.")
+                assign_initial_reliable = True
+                promote_new_reliable(sock)
         else:
             printY(f"RM Membership Unchanged: {new_member_count} available servers")
         MEMBER_COUNT = new_member_count
     else:
         timestamp = message.get("timestamp", "unknown time")
         printY(f"{timestamp}: Received unknown message from GFD: {message}")
+
+def add_server(server_id):
+    """Adds a server to the available servers list."""
+    global available_servers
+    if server_id not in available_servers:
+        available_servers.append(server_id)
+        printG(f"Server {server_id} added to available servers. Current list: {available_servers}")
+
+def remove_server(server_id, gfd_sock):
+    """Removes a server from the available servers list and handles reliable promotion if needed."""
+    global available_servers, reliable_server
+
+    if server_id in available_servers:
+        available_servers.remove(server_id)
+        printR(f"Server {server_id} removed from available servers. Current list: {available_servers}")
+
+        # Handle reliable server change if necessary
+        if server_id == reliable_server:
+            promote_new_reliable(gfd_sock)
+
+def promote_new_reliable(gfd_sock):
+    """Promotes a new reliable server and notifies GFD, LFD, and the server."""
+    global reliable_server, available_servers
+
+    if "S1" in available_servers:
+        new_reliable = "S1"
+    elif "S2" in available_servers:
+        new_reliable = "S2"
+    elif "S3" in available_servers:
+        new_reliable = "S3"
+    else:
+        printR("No available servers to promote to reliable!")
+        return
+
+    reliable_server = new_reliable
+
+    # Notify GFD about the new reliable
+    try:
+        message = create_message("RM", "new_reliable", server_id=new_reliable)
+        send(gfd_sock, message, "GFD")
+        printG(f"Notified GFD that {new_reliable} is the new reliable server.")
+    except Exception as e:
+        printR(f"Failed to notify GFD about new reliable server: {e}")
 
 def main():
     COMPONENT_NAME = "Replication Manager"

@@ -19,9 +19,14 @@ LFD_IP = '127.0.0.1'
 LFD_PORT = 54321
 
 # NOTE: Might have to hardcode the reliable server IP
-RELIABLE_SERVER_IP = '172.26.122.219'
+RELIABLE_SERVER_IP = None
 RELIABLE_SERVER_PORT = 12351
-
+MY_IP = os.environ.get(COMPONENT_ID)
+SERVER_IPS = [
+    os.environ.get("S1"),
+    os.environ.get("S2"),
+    os.environ.get("S3")  # Adjust to actual server IPs
+]
 state = 0
 lfd_socket = None
 clients = {}
@@ -46,6 +51,9 @@ def handle_heartbeat():
             if message and message.get("message") == "heartbeat":
                 heartbeat_message = create_message(COMPONENT_ID, "heartbeat acknowledgment")
                 send(lfd_socket, heartbeat_message, LFD_ID)
+            elif message and message.get("message") == "new_reliable":
+                RELIABLE_SERVER_IP = SERVER_IPS[int(message.get("ServerId")[-1])-1]
+                
         time.sleep(1)
 
 def handle_request_state(client_socket):
@@ -164,7 +172,9 @@ def main():
     isReliableServer = COMPONENT_ID == "S1"
     
     connect_to_lfd()
-    if (not isReliableServer): synchronize_state()
+    threading.Thread(target=handle_heartbeat, daemon=True).start()
+    time.sleep(2)
+    if (RELIABLE_SERVER_IP != None and RELIABLE_SERVER_IP != MY_IP): synchronize_state()
 
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -172,20 +182,19 @@ def main():
     server_socket.listen(5)
     printG(f"Server listening on {SERVER_IP}:{SERVER_PORT}")
 
-    if (isReliableServer):
-        server_socket2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_socket2.bind((RELIABLE_SERVER_IP, RELIABLE_SERVER_PORT))
-        server_socket2.listen(5)
+    
+    server_socket2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_socket2.bind((RELIABLE_SERVER_IP, RELIABLE_SERVER_PORT))
+    server_socket2.listen(5)
 
     # Start the heartbeat thread
-    threading.Thread(target=handle_heartbeat, daemon=True).start()
 
     try:
         while True:
             accept_new_connections(server_socket)  # Non-blocking, checks for connections
             process_client_messages()  # Process any client messages
-            if (isReliableServer): accept_new_connections_reliable(server_socket2)
+            accept_new_connections_reliable(server_socket2)
             flush_message_queue()  # Send responses to clients
             time.sleep(0.1)  # Prevent high CPU usage
     except KeyboardInterrupt:

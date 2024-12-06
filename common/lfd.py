@@ -23,6 +23,8 @@ gfd_socket = None
 server_socket = None
 CHECKPOINT_INTERVAL = 10
 
+reliable_server = "S1"
+
 def handle_server_registration():
     global SERVER_ID, CHECKPOINT_INTERVAL
     message = receive(server_socket, COMPONENT_ID)
@@ -75,6 +77,9 @@ def wait_for_server():
         try:
             server_socket, server_address = server_listener.accept()
             printG(f"Server connected from {server_address}")
+            
+            # send reliability server id to server
+            send(server_socket, create_message(COMPONENT_ID, "new_reliable", server_id=reliable_server), SERVER_ID)
             handle_server_registration()
             handle_server_communication()
         except Exception as e:
@@ -115,6 +120,9 @@ def receive_message_from_gfd():
                     elif action == "new_primary":
                         election_message = create_message(COMPONENT_ID, "new_primary")
                         send(server_socket, election_message, SERVER_ID)
+                    elif action == "new_reliable":
+                        global reliable_server
+                        reliable_server = message.get("server_id", None)
                     else:
                         printY(f"Unknown message received from GFD: {message}")
     except Exception as e:
