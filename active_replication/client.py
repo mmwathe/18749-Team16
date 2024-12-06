@@ -1,5 +1,5 @@
 from collections import defaultdict
-import os, sys
+import os, sys, time
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
 from communication_utils import *
 from dotenv import load_dotenv
@@ -82,3 +82,28 @@ class Client:
         for ip, sock in list(self.sockets.items()):
             sock.close()
             printY(f"Connection to server {ip} closed.")
+
+    def run(self):
+        # Create a client instance (IP addresses are handled in the client file)
+        self.connect()
+        try:
+            while True:
+                # Attempt reconnections to servers if any are disconnected
+                self.reconnect()
+
+                # Send an update message and process responses
+                self.send_to_all_servers("update", request_number=self.request_number)
+                self.receive_from_all_servers()
+
+                time.sleep(2)  # Delay between requests
+        except KeyboardInterrupt:
+            printY("self exiting...")
+        finally:
+            # Send exit message to all servers and close the connections
+            self.send_to_all_servers("exit")
+            self.close_connections()
+    
+    
+        
+        
+
