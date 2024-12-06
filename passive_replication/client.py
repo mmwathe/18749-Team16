@@ -71,7 +71,7 @@ class Client:
         while self.socket:
             try:
                 # Example: Send an 'update' message
-                message = create_message(self.client_id, "update", request_number=self.request_number)
+                message = create_message(self.client_id, "increase", request_number=self.request_number)
                 send(self.socket, message, f"Server@{self.connected_server}")
                 self.request_number += 1
                 
