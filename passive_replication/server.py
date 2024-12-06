@@ -18,9 +18,9 @@ PRIMARY_SERVER_ID = 'S1'  # Primary server starts as S1
 
 SERVER_IDS = ['S1', 'S2', 'S3']
 SERVER_IPS = {
-    'S1': '172.26.117.255',
-    'S2': '172.26.2.232',
-    'S3': '172.26.115.175',
+    'S1': '172.26.122.219',
+    'S2': '172.26.99.196',
+    'S3': '172.26.20.148',
 }
 
 CHECKPOINT_INTERVAL = 10
@@ -35,7 +35,6 @@ lfd_socket = None
 
 
 def connect_to_lfd():
-    """Connect to the LFD and register."""
     global lfd_socket
     while not lfd_socket:
         try:
@@ -52,7 +51,6 @@ def connect_to_lfd():
 
 
 def handle_heartbeat():
-    """Respond to heartbeats from the LFD and handle role change."""
     global role, PRIMARY_SERVER_ID
     while True:
         try:
@@ -78,7 +76,6 @@ def handle_heartbeat():
 
 
 def accept_client_connections(server_socket):
-    """Accept client connections and handle them if primary."""
     while True:
         try:
             client_socket, client_address = server_socket.accept()
@@ -91,7 +88,6 @@ def accept_client_connections(server_socket):
 
 
 def handle_client_requests(client_socket):
-    """Handle client requests if primary."""
     global state
     try:
         while True:
@@ -104,15 +100,16 @@ def handle_client_requests(client_socket):
 
             message_type = message.get("message")
             request_number = message.get("request_number", "unknown")
+            component_id = message.get("component_id", "unknown")
 
-            if message_type == "update":
+            if message_type == "increase":
                 state += 1
-                printG(f"State updated to {state} by client request.")
-                response = create_message(COMPONENT_ID, "state updated", state=state, request_number=request_number)
-                send(client_socket, response, "Client")
-            elif message_type == "ping":
-                response = create_message(COMPONENT_ID, "pong")
-                send(client_socket, response, "Client")
+                response = create_message(COMPONENT_ID, "state increased", state=state, request_number=request_number)
+                send(client_socket, response, component_id)
+            elif message_type == "decrease":
+                state -= 1
+                response = create_message(COMPONENT_ID, "state decreased", state=state, request_number=request_number)
+                send(client_socket, response, component_id)
             else:
                 printY(f"Unknown message type: {message_type}")
     except Exception as e:
@@ -124,7 +121,6 @@ def handle_client_requests(client_socket):
 
 
 def send_checkpoint():
-    """Send checkpoints to backup servers if primary."""
     global state
     while role == 'primary':
         time.sleep(CHECKPOINT_INTERVAL)
@@ -145,7 +141,6 @@ def send_checkpoint():
 
 
 def accept_checkpoint_connections(checkpoint_socket):
-    """Accept checkpoints from the primary server."""
     global state
     while True:
         try:
@@ -162,7 +157,6 @@ def accept_checkpoint_connections(checkpoint_socket):
 
 
 def synchronize_with_primary():
-    """Synchronize state with the primary server."""
     global state
     primary_ip, checkpoint_port = SERVER_IPS[PRIMARY_SERVER_ID], CHECKPOINT_PORT
     try:

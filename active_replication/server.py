@@ -18,7 +18,8 @@ LFD_ID = os.environ.get("MY_LFD_ID")
 LFD_IP = '127.0.0.1'
 LFD_PORT = 54321
 
-RELIABLE_SERVER_IP = os.environ.get("S1")
+# NOTE: Might have to hardcode the reliable server IP
+RELIABLE_SERVER_IP = '172.26.122.219'
 RELIABLE_SERVER_PORT = 12351
 
 state = 0
@@ -27,7 +28,6 @@ clients = {}
 message_queue = Queue()
 
 def connect_to_lfd():
-    """Establishes a connection to the LFD and sends a registration message."""
     global lfd_socket
     try:
         lfd_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -40,7 +40,6 @@ def connect_to_lfd():
         lfd_socket = None
 
 def handle_heartbeat():
-    """Handles heartbeat messages from the LFD."""
     while True:
         if lfd_socket:
             message = receive(lfd_socket, COMPONENT_ID)
@@ -50,13 +49,11 @@ def handle_heartbeat():
         time.sleep(1)
 
 def handle_request_state(client_socket):
-    """Handles a request_state message from another server."""
     global state
     response = create_message(COMPONENT_ID, "state_response", state=state)
     send(client_socket, response, "Requesting Server")
 
 def accept_new_connections_reliable(server_socket):
-    """Accepts new client or server connections."""
     # Non-blocking mode
     try:
         client_socket, client_address = server_socket.accept()
@@ -74,7 +71,6 @@ def accept_new_connections_reliable(server_socket):
     server_socket.setblocking(False)
 
 def accept_new_connections(server_socket):
-    """Accepts new client connections if available and adds them to the clients dictionary."""
     server_socket.setblocking(False)  # Set the socket to non-blocking mode
     try:
         client_socket, client_address = server_socket.accept()
@@ -87,8 +83,6 @@ def accept_new_connections(server_socket):
         printR(f"Error accepting client connection: {e}")
 
 def process_client_messages():
-    # print("Processing client messages")
-    """Processes messages from connected clients and handles responses."""
     global state
     for client_socket in list(clients.keys()):
         try:
@@ -96,16 +90,20 @@ def process_client_messages():
             message = receive(client_socket, COMPONENT_ID)
             if not message:  # If no message is received, skip further processing
                 continue
+
             message_type = message.get("message", "unknown")
             request_number = message.get("request_number", "unknown")
-            if message_type == "ping":
-                response = create_message(COMPONENT_ID, "pong")
-            elif message_type == "update":
+            component_id = message.get("component_id", "unknown")
+
+            if message_type == "increase":
                 state += 1
-                response = create_message(COMPONENT_ID, "state updated", state=state, request_number=request_number)
+                response = create_message(COMPONENT_ID, "state increased", state=state, request_number=request_number)
+            elif message_type == "decrease":
+                state -= 1
+                response = create_message(COMPONENT_ID, "state decreased", state=state, request_number=request_number)
             else:
-                response = create_message(COMPONENT_ID, "unknown command")
-            # Add the response to the queue
+                printY(f"Unknown message type: {message_type}")
+            
             message_queue.put((client_socket, response))
         except BlockingIOError:
             # No data available for now; skip processing this socket
@@ -115,7 +113,6 @@ def process_client_messages():
             disconnect_client(client_socket)
 
 def synchronize_state():
-    """Synchronizes the state with the reliable server if available."""
     global state
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -136,7 +133,7 @@ def synchronize_state():
         else:
             printY("No valid state response received from reliable server.")
     except socket.timeout:
-        printY("Synchronization timed out while waiting for the reliable server.")
+        printY(f"Synchronization timed out while waiting for the reliable server at {RELIABLE_SERVER_IP}:{RELIABLE_SERVER_PORT}")
     except socket.error as e:
         if e.errno in (errno.ECONNREFUSED, errno.ETIMEDOUT):
             printY("Reliable server unavailable. Skipping synchronization.")
@@ -148,20 +145,16 @@ def synchronize_state():
         sock.close() 
 
 def flush_message_queue():
-    # print("Flushing message queue")
-    """Sends all responses in the message queue."""
     while not message_queue.empty():
         try:
             client_socket, response = message_queue.get_nowait()
             send(client_socket, response, f"Client@{clients[client_socket]}")
-            # print(f"Sent response to {clients[client_socket]}")
         except KeyError:
             printR("Attempted to send message to a disconnected client.")
         except Exception as e:
             printR(f"Error sending message from queue: {e}")
 
 def disconnect_client(client_socket):
-    """Disconnects a client and removes it from the active clients list."""
     client_address = clients.pop(client_socket, None)
     if client_address:
         printR(f"Client disconnected: {client_address}")
